@@ -2,3 +2,4 @@
 *.gb
 *.gbk
 *.genbank
+.zcode/
