@@ -18,10 +18,11 @@
   select#reclist { background:#16223a; color:var(--txt); border:1px solid #2e4160; border-radius:5px; padding:5px 8px; font:13px inherit }
   main { flex:1; display:flex; flex-direction:column; min-height:0 }
   .toprow { flex:1; display:flex; min-height:0 }
-  #seqpanel { height:210px; border-top:1px solid var(--line); background:#0d1320; position:relative; flex:none }
-  #seqpanel.translate-on { height:268px }
-  #seqcv { position:absolute; inset:0; width:100%; height:100%; display:block; cursor:text }
-  #seqtools { position:absolute; top:5px; right:10px; display:flex; gap:5px; align-items:center; font-size:11px; color:var(--dim); z-index:2 }
+  #seqpanel { height:236px; border-top:1px solid var(--line); background:#0d1320; display:flex; flex-direction:column; flex:none }
+  #seqpanel.translate-on { height:294px }
+  #seqcv { flex:1; min-height:0; width:100%; display:block; cursor:text }
+  #seqtools { order:-1; display:flex; gap:5px; align-items:center; justify-content:flex-end; padding:3px 8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:11px; color:var(--dim) }
+  #seqinfo { margin-right:auto }
   #seqtools button { padding:2px 8px; font-size:12px }
   #mapwrap { flex:1; position:relative; display:flex; align-items:center; justify-content:center }
   #mapwrap.drag::after { content:"Drop .dna / .gb file"; position:absolute; inset:12px; border:2px dashed #4d8ad0; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; color:#8fb8ff; background:rgba(10,20,40,.6); z-index:5 }
@@ -236,6 +237,7 @@ function render(dna) {
 
   const W = wrap.clientWidth || 900, H = wrap.clientHeight || 700;
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}` }, wrap);
+  const defs = el("defs", {}, svg);
   const cx = W / 2, cy = H / 2;
   const R = Math.max(120, Math.min(W, H) / 2 - 130);
   const ang = (pos) => (pos / dna.length) * Math.PI * 2 - Math.PI / 2;
@@ -249,12 +251,39 @@ function render(dna) {
 
   // backbone + ruler
   el("circle", { cx, cy, r: R, fill: "none", stroke: "#2e4160", "stroke-width": 2 }, svg);
+
+  // curved labels: angular arc per label, colliding ones stacked on outer levels
+  const labelLevels = new Map();
+  let labelMaxLevel = 0;
+  {
+    const items = [];
+    dna.features.forEach((f, idx) => {
+      const [s, e] = featureRange(f);
+      if (e - s <= dna.length * 0.015) return;
+      const a = ang((s + e) / 2);
+      const half = Math.max(((e - s) / 2 / dna.length) * Math.PI * 2, (f.name.length * 6.3 / 2 + 3) / (R + 6));
+      items.push({ idx, a, half });
+    });
+    items.sort((x, y) => y.half - x.half);
+    const angn = (v) => ((v % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const adist = (u, v) => { const d = Math.abs(angn(u) - angn(v)); return Math.min(d, Math.PI * 2 - d); };
+    const taken = [];
+    for (const it of items) {
+      let level = 0;
+      while ((taken[level] || []).some(([a2, h2]) => adist(it.a, a2) < it.half + h2 - 0.02)) level++;
+      (taken[level] = taken[level] || []).push([it.a, it.half]);
+      labelLevels.set(it.idx, level);
+      if (level > labelMaxLevel) labelMaxLevel = level;
+    }
+  }
+  const tickR = R + 6 + (labelMaxLevel + 1) * 13;
+
   const step = dna.length < 1500 ? 250 : dna.length < 6000 ? 500 : 1000;
   const tickg = el("g", { class: "tick" }, svg);
   for (let p = 0; p < dna.length; p += step) {
     const [x1, y1] = polar(cx, cy, R - 5, ang(p));
     const [x2, y2] = polar(cx, cy, R + 5, ang(p));
-    const [tx, ty] = polar(cx, cy, R + 18, ang(p));
+    const [tx, ty] = polar(cx, cy, tickR, ang(p));
     el("line", { x1, y1, x2, y2, stroke: "#3a5580", "stroke-width": 1.5 }, tickg);
     const t = el("text", { x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "middle" }, tickg);
     t.textContent = p.toLocaleString();
@@ -282,20 +311,33 @@ function render(dna) {
       path.addEventListener("click", () => select(idx));
       el("title", {}, path).textContent = `${f.name} (${f.type})`;
     });
-    // label
+    // label — curved along an arc concentric with the map
     const [s, e] = featureRange(f);
-    if (e - s > dna.length * 0.015) {
-      const mid = (s + e) / 2;
-      const a = ang(mid);
-      const [lx, ly] = polar(cx, cy, R + 4, a);
-      const deg = (a * 180 / Math.PI + 90 + 360) % 360;
-      const flip = deg > 90 && deg < 270;
-      const t = el("text", {
-        x: lx, y: ly, fill: "#c9d6ea", "font-size": 10.5, "font-weight": 600,
-        "text-anchor": flip ? "end" : "start",
-        transform: `rotate(${(a * 180 / Math.PI + 90).toFixed(2)},${lx.toFixed(1)},${ly.toFixed(1)})`,
-      }, svg);
-      t.textContent = f.name;
+    const lvl = labelLevels.get(idx);
+    if (lvl !== undefined) {
+      const labelR = R + 6 + lvl * 13;
+      const aMid = ang((s + e) / 2);
+      // leader: radial line from the feature ring's outer edge to the label arc
+      const [ld1x, ld1y] = polar(cx, cy, base, aMid);
+      const [ld2x, ld2y] = polar(cx, cy, labelR - 1, aMid);
+      el("line", { x1: ld1x.toFixed(1), y1: ld1y.toFixed(1), x2: ld2x.toFixed(1), y2: ld2y.toFixed(1),
+        stroke: "#3a5580", "stroke-width": 1 }, svg);
+      const textHalf = (f.name.length * 6.3) / 2 + 3;
+      const halfSpan = Math.max(((e - s) / 2 / dna.length) * Math.PI * 2, textHalf / labelR);
+      // on the bottom half, sweep the arc the other way so text reads left-to-right
+      const bottom = Math.sin(aMid) > 0;
+      const [x0, y0] = polar(cx, cy, labelR, bottom ? aMid + halfSpan : aMid - halfSpan);
+      const [x1, y1] = polar(cx, cy, labelR, bottom ? aMid - halfSpan : aMid + halfSpan);
+      const large = halfSpan * 2 > Math.PI ? 1 : 0;
+      const sweep = bottom ? 0 : 1;
+      const pid = `flabel${idx}`;
+      el("path", { id: pid, fill: "none",
+        d: `M${x0.toFixed(1)} ${y0.toFixed(1)} A${labelR.toFixed(1)} ${labelR.toFixed(1)} 0 ${large} ${sweep} ${x1.toFixed(1)} ${y1.toFixed(1)}` }, defs);
+      const t = el("text", { fill: "#c9d6ea", "font-size": 10.5, "font-weight": 600 }, svg);
+      const tp = el("textPath", { startOffset: "50%", "text-anchor": "middle" }, t);
+      tp.setAttribute("href", `#${pid}`);
+      tp.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", `#${pid}`);
+      tp.textContent = f.name;
     }
   });
 
@@ -412,7 +454,7 @@ function seqMetrics() {
   const seqY = RULER_H + nLanes * LANE_H + 6 + SEQ_Y_OFF;
   const w = cv.clientWidth || 800, h = cv.clientHeight || 210;
   const protTop = seqY + 22;
-  const protLaneH = seqView.translate ? Math.max(0, (h - protTop - 2) / 3) : 0;
+  const protLaneH = seqView.translate ? Math.max(0, h - protTop - 2) : 0;
   return { cv, dna, nLanes, seqY, w, h, protTop, protLaneH };
 }
 
@@ -516,34 +558,45 @@ function renderSeq() {
     ctx.stroke();
   }
 
-  // translation lanes (+1/+2/+3), aligned to absolute sequence frames
+  // protein row: amino acids of protein-coding features (CDS or one with a
+  // translation qualifier), drawn as one continuous line under each feature
   if (seqView.translate && protLaneH > 6) {
     const sel = seqView.sel;
-    for (let fr = 0; fr < 3; fr++) {
-      const ly = protTop + fr * protLaneH + protLaneH - 4;
-      ctx.fillStyle = "#67799a"; ctx.font = "9px system-ui"; ctx.textBaseline = "alphabetic";
-      ctx.textAlign = "left";
-      ctx.fillText(`+${fr + 1}`, 4, ly);
+    ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+    const ly = protTop + 12;
+    const drawAA = (b, aa, comp) => {
+      const inSel = sel && b >= sel.a && b + 3 <= sel.b && (b - sel.a) % 3 === 0;
+      const x = xOf(b);
+      if (inSel) {
+        ctx.fillStyle = "rgba(77,138,208,.18)";
+        ctx.fillRect(x, protTop, 3 * ppb, protLaneH - 1);
+      }
       ctx.font = "9px ui-monospace, Menlo, monospace";
-      for (let b = start + (((fr - start) % 3) + 3) % 3; b + 3 <= end; b += 3) {
-        const codon = dna.sequence.substr(b, 3);
-        if (!/[acgtn]{3}/i.test(codon)) continue;
-        const aa = translateCodon(codon);
-        const inSel = sel && b >= sel.a && b + 3 <= sel.b && (b - sel.a) % 3 === 0;
-        const bright = !!inSel;
-        const x = xOf(b);
-        if (bright) {
-          ctx.fillStyle = "rgba(77,138,208,.18)";
-          ctx.fillRect(x, protTop + fr * protLaneH, 3 * ppb, protLaneH - 1);
-        }
-        if (ppb * 3 >= 7.5) {
-          if (aa === "*") { ctx.fillStyle = bright ? "#ff7db8" : "#a4527e"; ctx.font = "bold 9px ui-monospace, Menlo, monospace"; }
-          else ctx.fillStyle = bright ? "#c9d6ea" : "#4a5a78";
-          ctx.fillText(aa, x + (3 * ppb - 5.4) / 2, ly);
-          ctx.font = "9px ui-monospace, Menlo, monospace";
-        } else if (aa === "*") {
-          ctx.fillStyle = "rgba(255,125,184,.55)";
-          ctx.fillRect(x, ly - 5, 1.5, 5);
+      if (ppb * 3 >= 7.5) {
+        if (aa === "*") { ctx.fillStyle = inSel ? "#ff7db8" : "#a4527e"; ctx.font = "bold 9px ui-monospace, Menlo, monospace"; }
+        else ctx.fillStyle = inSel ? "#c9d6ea" : (comp ? "#4f8f8a" : "#67799a");
+        ctx.fillText(aa, x + (3 * ppb - 5.4) / 2, ly);
+      } else if (aa === "*") {
+        ctx.fillStyle = "rgba(255,125,184,.55)";
+        ctx.fillRect(x, ly - 5, 1.5, 5);
+      }
+    };
+    for (const f of dna.features) {
+      const q = f.qualifiers || {};
+      if (!(f.type === "CDS" || (q.translation && q.translation[0]))) continue;
+      const comp = f.direction === 2 || !!q.complement;
+      for (const seg of f.segments) {
+        const s0 = Math.max(seg.start, start), e0 = Math.min(seg.end, end);
+        if (s0 >= e0) continue;
+        if (comp) {
+          // reverse strand reads codons right-to-left, aligned to the segment end
+          const t = seg.end - 3;
+          if (t < s0) continue;
+          for (let b = t - 3 * Math.floor((t - s0) / 3); b + 3 <= e0; b += 3)
+            drawAA(b, translateCodon(revcomp(dna.sequence.substr(b, 3))), true);
+        } else {
+          for (let b = seg.start + ((((s0 - seg.start) % 3) + 3) % 3); b + 3 <= e0; b += 3)
+            drawAA(b, translateCodon(dna.sequence.substr(b, 3)), false);
         }
       }
     }
