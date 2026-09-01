@@ -9,13 +9,12 @@ A dependency-free, browser-based plasmid/vector viewer. Drop in a SnapGene `.dna
 | `vector_viewer.html` | The viewer app (UI, map rendering, sequence panel) |
 | `snapgene_parse.js` | Parser for SnapGene binary `.dna` files (exposes `SnapGene.parse`) |
 | `genbank_parse.js` | Parser for GenBank flatfiles (exposes `GenBank.parse` / `GenBank.parseAll`) |
-| `pUC19.dna` | Sample SnapGene file for testing |
 
 Both parsers are UMD-style: they work in the browser (globals `SnapGene` / `GenBank`) and in Node (`require`).
 
 ## Usage
 
-Serve the folder over HTTP (needed for the `?open=` auto-load and general cleanliness):
+Serve the folder over HTTP (recommended; also required when opening via `file://` on some browsers):
 
 ```sh
 python3 -m http.server 8000
@@ -30,8 +29,7 @@ Loading sequences:
 
 URL parameters:
 
-- `?open=pUC19.dna` — auto-load a local file
-- `?ncbi=X83542` — auto-fetch an NCBI accession (or `?ncbi=X83542,L09137`)
+- `?ncbi=X83542` — pre-fills the accession box (nothing is fetched until you press “Fetch”)
 
 ## Features shown
 

@@ -54,7 +54,7 @@
 </header>
 <main>
   <div class="toprow">
-    <div id="mapwrap"><div class="empty">Drop a SnapGene <b>.dna</b> or GenBank <b>.gb</b> file here, click “Open file”,<br>or enter an NCBI accession above and hit “Fetch”.<br>Example: <a href="?open=pUC19.dna" style="color:#8fb8ff">?open=pUC19.dna</a> · <a href="?ncbi=X83542" style="color:#8fb8ff">?ncbi=X83542</a></div></div>
+    <div id="mapwrap"><div class="empty">Drop a SnapGene <b>.dna</b> or GenBank <b>.gb</b> file here, click “Open file”,<br>or enter an NCBI accession above and hit “Fetch”.</div></div>
     <aside>
       <h2>Features</h2><div id="featlist"></div>
       <h2>Primers</h2><div id="primerlist"></div>
@@ -635,10 +635,8 @@ wrap.addEventListener("drop", (e) => {
   if (f) f.arrayBuffer().then(b => loadBytes(b, f.name));
 });
 
-const qp = new URLSearchParams(location.search).get("open");
-if (qp) fetch(qp).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(b => loadBytes(b, qp)).catch(err => console.warn("auto-open failed:", err));
 const qn = new URLSearchParams(location.search).get("ncbi");
-if (qn) fetchNCBI(qn);
+if (qn) document.getElementById("ncbi").value = qn;
 window.addEventListener("resize", () => { if (state.dna) { render(state.dna); renderSeq(); } });
 </script>
 </body>
