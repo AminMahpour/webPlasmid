@@ -39,6 +39,7 @@ URL parameters:
 - **Restriction sites**: computed in-browser against a built-in enzyme list (`EcoRI` … `AflII`, IUPAC-aware, circular-junction aware); shown as inner ticks and a sidebar list.
 - **Sidebar**: feature list, primer list, restriction sites, and per-feature qualifier details.
 - **Sequence panel**: drag to select, wheel to scroll, Ctrl/⌘-wheel or +/−/fit to zoom, letter glyphs at high zoom / barcode at low zoom, and a **copy** button for the selected slice. Selection is mirrored as an arc on the map.
+- **Translation view**: the **AA** button under the sequence panel toggles three forward reading frames (+1/+2/+3) drawn below the sequence — single-letter amino acids at high zoom, stop-codon ticks at low zoom. Codons inside a drag selection (aligned to the selection start) are highlighted, and the panel reports `N aa · fK` for the frame with fewest stops. Clicking a CDS shows its protein in the sidebar: the `/translation` qualifier when present, otherwise translated from the sequence (reverse-strand and `join()`ed CDSs handled; stop codon excluded, GTG/TTG/ATT starts shown as Met).
 
 ## Format support notes
 
@@ -48,6 +49,7 @@ URL parameters:
 ## Known limitations
 
 - Primer tracks exist only for SnapGene files (GenBank `/primer_bind` features render as regular features).
+- The translation track shows forward frames only; reverse-strand CDS proteins appear in the sidebar when you click the feature.
 - The enzyme list is hardcoded in `vector_viewer.html` (`ENZYMES`) — edit that map to add enzymes.
 - No GenBank writing/export and no FASTA support.
 

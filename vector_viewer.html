@@ -19,6 +19,7 @@
   main { flex:1; display:flex; flex-direction:column; min-height:0 }
   .toprow { flex:1; display:flex; min-height:0 }
   #seqpanel { height:210px; border-top:1px solid var(--line); background:#0d1320; position:relative; flex:none }
+  #seqpanel.translate-on { height:268px }
   #seqcv { position:absolute; inset:0; width:100%; height:100%; display:block; cursor:text }
   #seqtools { position:absolute; top:5px; right:10px; display:flex; gap:5px; align-items:center; font-size:11px; color:var(--dim); z-index:2 }
   #seqtools button { padding:2px 8px; font-size:12px }
@@ -66,6 +67,7 @@
     <canvas id="seqcv"></canvas>
     <div id="seqtools">
       <span id="seqinfo"></span>
+      <button id="transbtn" title="Toggle translation track">AA</button>
       <button id="zoomout" title="zoom out">−</button>
       <button id="zoomfit">fit</button>
       <button id="zoomin" title="zoom in">+</button>
@@ -92,7 +94,7 @@ const TYPE_COLORS = { CDS:"#3aa0ff", promoter:"#ffb84d", terminator:"#c79bff", r
 
 const state = { dna:null, selected:-1 };
 let mapGeom = null;
-const seqView = { dna:null, ppb:4, offset:0, sel:null, anchor:null, dragging:false, hitRects:[] };
+const seqView = { dna:null, ppb:4, offset:0, sel:null, anchor:null, dragging:false, hitRects:[], translate:false };
 
 function el(tag, attrs, parent) {
   const n = document.createElementNS(SVGNS, tag);
@@ -116,6 +118,49 @@ function enzymeSites(seq, circular) {
   }
   sites.sort((a, b) => a.pos - b.pos);
   return sites;
+}
+
+// ---------------- translation ----------------
+const COMP = { A: "T", T: "A", G: "C", C: "G", N: "N" };
+function revcomp(s) {
+  return s.split("").reverse().map((c) => COMP[c.toUpperCase()] || "N").join("");
+}
+// Standard genetic code, codons in T,C,A,G order (TCAG basis for both codon positions)
+const AA_STR = "FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG";
+const CODON_TABLE = {};
+{
+  let i = 0;
+  for (const a of "TCAG") for (const b of "TCAG") for (const c of "TCAG")
+    CODON_TABLE[a + b + c] = AA_STR[i++];
+}
+function translateCodon(c) { return CODON_TABLE[c.toUpperCase()] || "X"; }
+function translateFrame(seq, frame) {
+  let out = "";
+  for (let i = frame; i + 3 <= seq.length; i += 3) out += translateCodon(seq.substr(i, 3));
+  return out;
+}
+function featureProtein(f, dna) {
+  const q = f.qualifiers || {};
+  if (q.translation && q.translation[0]) return q.translation[0].replace(/\s+/g, "");
+  const comp = f.direction === 2 || !!q.complement;
+  let s = f.segments.map((sg) => dna.sequence.slice(sg.start, sg.end)).join("");
+  if (comp) s = revcomp(s);
+  let prot = translateFrame(s, 0);
+  // GenBank convention: CDS coords include the stop codon, translations exclude it
+  if (prot.endsWith("*")) prot = prot.slice(0, -1);
+  // initiator codons other than ATG (GTG/TTG/ATT) translate as Met
+  if (prot && /^(GTG|TTG|ATT)/i.test(s)) prot = "M" + prot.slice(1);
+  return prot;
+}
+function bestFrame(seq) {
+  // frame relative to seq start with the fewest stops; used for selection readout
+  let best = { frame: 0, prot: translateFrame(seq, 0) };
+  for (let fr = 1; fr < 3; fr++) {
+    const prot = translateFrame(seq, fr);
+    if ((prot.match(/\*/g) || []).length < (best.prot.match(/\*/g) || []).length)
+      best = { frame: fr, prot };
+  }
+  return best;
 }
 
 function assignTracks(features) {
@@ -333,8 +378,13 @@ function select(i) {
     renderSeq();
   }
   const q = Object.entries(f.qualifiers).map(([k, v]) => `  ${k}: ${v.join("; ")}`).join("\n");
-  document.getElementById("detail").innerHTML =
+  let html =
     `<b>${esc(f.name)}</b>  ${f.type}\nsegments: ${f.segments.map(s => `${s.start + 1}–${s.end}${s.color ? " " + s.color : ""}`).join(", ")}\nstrand: ${["none", "top →", "bottom ←", "bidirectional"][f.direction]}${q ? "\n" + esc(q) : ""}`;
+  if (f.type === "CDS" || (f.qualifiers && f.qualifiers.translation)) {
+    const prot = featureProtein(f, state.dna);
+    html += `\n\n<b>protein</b> (${prot.length} aa)\n${esc(prot.replace(/(.{1,64})/g, "$1\n"))}`;
+  }
+  document.getElementById("detail").innerHTML = html;
 }
 
 function markSelected() {
@@ -360,7 +410,10 @@ function seqMetrics() {
   const dna = seqView.dna;
   const nLanes = dna.features.length ? Math.max(...dna.features.map((f) => f.track + 1)) : 1;
   const seqY = RULER_H + nLanes * LANE_H + 6 + SEQ_Y_OFF;
-  return { cv, dna, nLanes, seqY, w: cv.clientWidth || 800, h: cv.clientHeight || 210 };
+  const w = cv.clientWidth || 800, h = cv.clientHeight || 210;
+  const protTop = seqY + 22;
+  const protLaneH = seqView.translate ? Math.max(0, (h - protTop - 2) / 3) : 0;
+  return { cv, dna, nLanes, seqY, w, h, protTop, protLaneH };
 }
 
 function niceStep(px) {
@@ -377,7 +430,7 @@ function clampOffset() {
 
 function renderSeq() {
   if (!seqView.dna) return;
-  const { cv, dna, nLanes, seqY, w, h } = seqMetrics();
+  const { cv, dna, nLanes, seqY, w, h, protTop, protLaneH } = seqMetrics();
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr)) cv.width = Math.round(w * dpr);
   if (cv.height !== Math.round(h * dpr)) cv.height = Math.round(h * dpr);
@@ -463,11 +516,51 @@ function renderSeq() {
     ctx.stroke();
   }
 
+  // translation lanes (+1/+2/+3), aligned to absolute sequence frames
+  if (seqView.translate && protLaneH > 6) {
+    const sel = seqView.sel;
+    for (let fr = 0; fr < 3; fr++) {
+      const ly = protTop + fr * protLaneH + protLaneH - 4;
+      ctx.fillStyle = "#67799a"; ctx.font = "9px system-ui"; ctx.textBaseline = "alphabetic";
+      ctx.textAlign = "left";
+      ctx.fillText(`+${fr + 1}`, 4, ly);
+      ctx.font = "9px ui-monospace, Menlo, monospace";
+      for (let b = start + (((fr - start) % 3) + 3) % 3; b + 3 <= end; b += 3) {
+        const codon = dna.sequence.substr(b, 3);
+        if (!/[acgtn]{3}/i.test(codon)) continue;
+        const aa = translateCodon(codon);
+        const inSel = sel && b >= sel.a && b + 3 <= sel.b && (b - sel.a) % 3 === 0;
+        const bright = !!inSel;
+        const x = xOf(b);
+        if (bright) {
+          ctx.fillStyle = "rgba(77,138,208,.18)";
+          ctx.fillRect(x, protTop + fr * protLaneH, 3 * ppb, protLaneH - 1);
+        }
+        if (ppb * 3 >= 7.5) {
+          if (aa === "*") { ctx.fillStyle = bright ? "#ff7db8" : "#a4527e"; ctx.font = "bold 9px ui-monospace, Menlo, monospace"; }
+          else ctx.fillStyle = bright ? "#c9d6ea" : "#4a5a78";
+          ctx.fillText(aa, x + (3 * ppb - 5.4) / 2, ly);
+          ctx.font = "9px ui-monospace, Menlo, monospace";
+        } else if (aa === "*") {
+          ctx.fillStyle = "rgba(255,125,184,.55)";
+          ctx.fillRect(x, ly - 5, 1.5, 5);
+        }
+      }
+    }
+  }
+
   // status
   const info = document.getElementById("seqinfo");
-  info.textContent = seqView.sel
-    ? `selected ${(seqView.sel.a + 1).toLocaleString()}–${seqView.sel.b.toLocaleString()} · ${(seqView.sel.b - seqView.sel.a).toLocaleString()} bp`
-    : `${dna.length.toLocaleString()} bp — drag to select`;
+  if (seqView.sel) {
+    let txt = `selected ${(seqView.sel.a + 1).toLocaleString()}–${seqView.sel.b.toLocaleString()} · ${(seqView.sel.b - seqView.sel.a).toLocaleString()} bp`;
+    if (seqView.translate) {
+      const b = bestFrame(dna.sequence.slice(seqView.sel.a, seqView.sel.b));
+      txt += ` → ${b.prot.length} aa · f${b.frame}`;
+    }
+    info.textContent = txt;
+  } else {
+    info.textContent = `${dna.length.toLocaleString()} bp — drag to select`;
+  }
 }
 
 function updateSelArc() {
@@ -546,6 +639,12 @@ function wireSeqPanel() {
     try { await navigator.clipboard.writeText(seqView.dna.sequence.slice(a, b)); } catch {}
   });
   cv.addEventListener("dblclick", () => { seqView.sel = null; renderSeq(); updateSelArc(); });
+  document.getElementById("transbtn").addEventListener("click", () => {
+    seqView.translate = !seqView.translate;
+    document.getElementById("seqpanel").classList.toggle("translate-on", seqView.translate);
+    document.getElementById("transbtn").style.background = seqView.translate ? "#2e4160" : "";
+    renderSeq();
+  });
 }
 wireSeqPanel();
 
