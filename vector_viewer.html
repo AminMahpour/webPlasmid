@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Vector Viewer — SnapGene .dna / GenBank</title>
+<style>
+  :root { --bg:#0b0f17; --panel:#111827; --line:#22314a; --txt:#c9d6ea; --dim:#67799a; }
+  * { box-sizing:border-box; margin:0 }
+  body { background:var(--bg); color:var(--txt); font:14px "Segoe UI", system-ui, sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden }
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel) }
+  header h1 { font-size:16px; color:#e8f0ff }
+  header .meta { color:var(--dim); font-size:12px }
+  header .spacer { flex:1 }
+  button, label.btn { background:#16223a; color:var(--txt); border:1px solid #2e4160; border-radius:5px; padding:6px 12px; font:600 13px inherit; cursor:pointer }
+  button:hover, label.btn:hover { background:#1e2f4f }
+  #ncbi { background:#0d1320; color:var(--txt); border:1px solid #2e4160; border-radius:5px; padding:6px 10px; font:13px inherit; width:210px }
+  #ncbi::placeholder { color:var(--dim) }
+  select#reclist { background:#16223a; color:var(--txt); border:1px solid #2e4160; border-radius:5px; padding:5px 8px; font:13px inherit }
+  main { flex:1; display:flex; flex-direction:column; min-height:0 }
+  .toprow { flex:1; display:flex; min-height:0 }
+  #seqpanel { height:210px; border-top:1px solid var(--line); background:#0d1320; position:relative; flex:none }
+  #seqcv { position:absolute; inset:0; width:100%; height:100%; display:block; cursor:text }
+  #seqtools { position:absolute; top:5px; right:10px; display:flex; gap:5px; align-items:center; font-size:11px; color:var(--dim); z-index:2 }
+  #seqtools button { padding:2px 8px; font-size:12px }
+  #mapwrap { flex:1; position:relative; display:flex; align-items:center; justify-content:center }
+  #mapwrap.drag::after { content:"Drop .dna / .gb file"; position:absolute; inset:12px; border:2px dashed #4d8ad0; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; color:#8fb8ff; background:rgba(10,20,40,.6); z-index:5 }
+  svg { width:100%; height:100% }
+  aside { width:300px; border-left:1px solid var(--line); background:var(--panel); overflow-y:auto; padding:12px }
+  aside h2 { font-size:11px; letter-spacing:2px; color:var(--dim); text-transform:uppercase; margin:14px 0 6px }
+  aside h2:first-child { margin-top:0 }
+  .row { padding:5px 6px; border-radius:4px; cursor:pointer; display:flex; gap:8px; align-items:baseline; font-size:12.5px }
+  .row:hover { background:#16223a }
+  .row .sw { width:9px; height:9px; border-radius:2px; flex:none; transform:translateY(1px) }
+  .row .pos { margin-left:auto; color:var(--dim); font-size:11px; white-space:nowrap }
+  #detail { border-top:1px solid var(--line); padding-top:8px; font-size:12px; color:var(--dim); white-space:pre-wrap; word-break:break-word }
+  #detail b { color:#e8f0ff }
+  .feat path { cursor:pointer }
+  .feat path:hover { filter:brightness(1.3) }
+  .feat path.sel { stroke:#ffffff; stroke-width:1.8; filter:brightness(1.45) drop-shadow(0 0 4px rgba(255,255,255,.55)) }
+  .row.sel { background:#1e2f4f; outline:1px solid #4d8ad0 }
+  .empty { color:var(--dim); padding:40px; text-align:center }
+  .tick text { font-size:9px; fill:var(--dim) }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="name">Vector Viewer</h1>
+  <span class="meta" id="meta"></span>
+  <span class="spacer"></span>
+  <input id="ncbi" placeholder="NCBI accession(s), e.g. X83542" spellcheck="false">
+  <button id="fetchbtn" title="Fetch from NCBI">Fetch</button>
+  <select id="reclist" hidden></select>
+  <label class="btn">Open file<input type="file" id="file" accept=".dna,.gb,.gbk,.genbank" hidden></label>
+</header>
+<main>
+  <div class="toprow">
+    <div id="mapwrap"><div class="empty">Drop a SnapGene <b>.dna</b> or GenBank <b>.gb</b> file here, click “Open file”,<br>or enter an NCBI accession above and hit “Fetch”.<br>Example: <a href="?open=pUC19.dna" style="color:#8fb8ff">?open=pUC19.dna</a> · <a href="?ncbi=X83542" style="color:#8fb8ff">?ncbi=X83542</a></div></div>
+    <aside>
+      <h2>Features</h2><div id="featlist"></div>
+      <h2>Primers</h2><div id="primerlist"></div>
+      <h2>Restriction sites</h2><div id="enzlist"></div>
+      <h2>Selection</h2><div id="detail">Click a feature on the map.</div>
+    </aside>
+  </div>
+  <div id="seqpanel">
+    <canvas id="seqcv"></canvas>
+    <div id="seqtools">
+      <span id="seqinfo"></span>
+      <button id="zoomout" title="zoom out">−</button>
+      <button id="zoomfit">fit</button>
+      <button id="zoomin" title="zoom in">+</button>
+      <button id="copybtn">copy</button>
+    </div>
+  </div>
+</main>
+<script src="snapgene_parse.js"></script>
+<script src="genbank_parse.js"></script>
+<script>
+"use strict";
+const SVGNS = "http://www.w3.org/2000/svg";
+const ENZYMES = {
+  EcoRI:"GAATTC", BamHI:"GGATCC", HindIII:"AAGCTT", XhoI:"CTCGAG", NotI:"GCGGCCGC",
+  SalI:"GTCGAC", PstI:"CTGCAG", EcoRV:"GATATC", SmaI:"CCCGGG", KpnI:"GGTACC",
+  SacI:"GAGCTC", SpeI:"ACTAGT", NcoI:"CCATGG", NheI:"GCTAGC", XbaI:"TCTAGA",
+  BglII:"AGATCT", ClaI:"ATCGAT", Acc65I:"GGTACC", AflII:"CTTAAG",
+};
+const IUPAC_RE = { A:"A", C:"C", G:"G", T:"T", R:"[AG]", Y:"[CT]", S:"[GC]", W:"[AT]",
+  K:"[GT]", M:"[AC]", B:"[CGT]", D:"[AGT]", H:"[ACT]", V:"[ACG]", N:"." };
+const TYPE_COLORS = { CDS:"#3aa0ff", promoter:"#ffb84d", terminator:"#c79bff", rep_origin:"#4dd2ff",
+  primer_bind:"#7dff8a", protein_bind:"#ffd24a", misc_feature:"#8fa8cc", regulatory:"#ff7db8",
+  misc_restriction:"#6a7ba0", source:"#445577" };
+
+const state = { dna:null, selected:-1 };
+let mapGeom = null;
+const seqView = { dna:null, ppb:4, offset:0, sel:null, anchor:null, dragging:false, hitRects:[] };
+
+function el(tag, attrs, parent) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+const polar = (cx, cy, r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+
+function enzymeSites(seq, circular) {
+  const sites = [];
+  const hay = seq.toUpperCase();
+  for (const [name, motif] of Object.entries(ENZYMES)) {
+    const re = new RegExp("(?=(" + [...motif].map(c => IUPAC_RE[c]).join("") + "))", "g");
+    const text = circular ? hay + hay.slice(0, motif.length) : hay;
+    let m;
+    while ((m = re.exec(text)) && m.index < hay.length) {
+      sites.push({ name, pos: m.index });
+      re.lastIndex = m.index + 1;
+    }
+  }
+  sites.sort((a, b) => a.pos - b.pos);
+  return sites;
+}
+
+function assignTracks(features) {
+  const tracks = [];
+  for (const f of [...features].sort((a, b) => featureRange(a)[0] - featureRange(b)[0])) {
+    const [s, e] = featureRange(f);
+    let placed = false;
+    for (let i = 0; i < tracks.length; i++) {
+      if (s >= tracks[i]) { tracks[i] = Math.max(e, s + 1); f.track = i; placed = true; break; }
+    }
+    if (!placed) { f.track = tracks.length; tracks.push(e); }
+  }
+  return Math.max(1, tracks.length);
+}
+function featureRange(f) {
+  if (!f.segments.length) return [0, 0];
+  return [Math.min(...f.segments.map(s => s.start)), Math.max(...f.segments.map(s => s.end))];
+}
+
+function arcPts(cx, cy, r, aStart, aEnd) {
+  const n = Math.max(4, Math.ceil(Math.abs(aEnd - aStart) * 80));
+  const pts = [];
+  for (let i = 0; i <= n; i++) pts.push(polar(cx, cy, r, aStart + (aEnd - aStart) * i / n));
+  return pts;
+}
+
+function poly(points) {
+  return "M" + points.map((p) => p.map((v) => v.toFixed(2)).join(",")).join("L") + "Z";
+}
+
+// Arrowhead: constant angular size (head arc length ≈ 1.3x band width), tip at feature end.
+// mode: null = flat band, "fwd" = tip at end, "rev" = tip at start, "bi" = tips at both ends.
+function featurePath(cx, cy, r0, r1, ang, s, e, mode) {
+  const a0 = ang(s), a1 = ang(e), span = a1 - a0;
+  const midR = (r0 + r1) / 2;
+  if (!mode || Math.abs(span) < 0.015) {
+    return poly([...arcPts(cx, cy, r1, a0, a1), ...arcPts(cx, cy, r0, a1, a0)]);
+  }
+  const head = Math.min(Math.abs(span) * 0.9, ((r1 - r0) / midR) * 1.3);
+  if (mode === "fwd") {
+    return poly([
+      ...arcPts(cx, cy, r1, a0, a1 - head),
+      polar(cx, cy, midR, a1),
+      ...arcPts(cx, cy, r0, a1 - head, a0),
+    ]);
+  }
+  if (mode === "rev") {
+    return poly([
+      polar(cx, cy, midR, a0),
+      ...arcPts(cx, cy, r1, a0 + head, a1),
+      ...arcPts(cx, cy, r0, a1, a0 + head),
+    ]);
+  }
+  // bidirectional
+  const h0 = a0 + head, h1 = a1 - head;
+  return poly([
+    polar(cx, cy, midR, a0),
+    ...arcPts(cx, cy, r1, h0, h1),
+    polar(cx, cy, midR, a1),
+    ...arcPts(cx, cy, r0, h1, h0),
+  ]);
+}
+
+function render(dna) {
+  state.dna = dna;
+  const wrap = document.getElementById("mapwrap");
+  wrap.innerHTML = "";
+  const name = dna.notes.CustomMapLabel || dna.notes.Name || "unnamed.dna";
+  document.getElementById("name").textContent = name;
+  document.getElementById("meta").textContent =
+    `${dna.length.toLocaleString()} bp · ${dna.circular ? "circular" : "linear"}` +
+    (dna.notes.Type ? ` · ${dna.notes.Type}` : "");
+
+  const W = wrap.clientWidth || 900, H = wrap.clientHeight || 700;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}` }, wrap);
+  const cx = W / 2, cy = H / 2;
+  const R = Math.max(120, Math.min(W, H) / 2 - 130);
+  const ang = (pos) => (pos / dna.length) * Math.PI * 2 - Math.PI / 2;
+  mapGeom = { svg, cx, cy, R, ang };
+
+  // selection arc from the sequence panel
+  el("path", { id: "selarc", fill: "none", stroke: "#ffd24a", "stroke-width": 4.5,
+    "stroke-linecap": "round", opacity: 0.9, display: "none" }, svg);
+  el("text", { id: "selinfo", x: cx, y: cy + 30, "text-anchor": "middle", fill: "#ffd24a",
+    "font-size": 10.5 }, svg);
+
+  // backbone + ruler
+  el("circle", { cx, cy, r: R, fill: "none", stroke: "#2e4160", "stroke-width": 2 }, svg);
+  const step = dna.length < 1500 ? 250 : dna.length < 6000 ? 500 : 1000;
+  const tickg = el("g", { class: "tick" }, svg);
+  for (let p = 0; p < dna.length; p += step) {
+    const [x1, y1] = polar(cx, cy, R - 5, ang(p));
+    const [x2, y2] = polar(cx, cy, R + 5, ang(p));
+    const [tx, ty] = polar(cx, cy, R + 18, ang(p));
+    el("line", { x1, y1, x2, y2, stroke: "#3a5580", "stroke-width": 1.5 }, tickg);
+    const t = el("text", { x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "middle" }, tickg);
+    t.textContent = p.toLocaleString();
+  }
+
+  // features
+  assignTracks(dna.features);
+  const nTracks = Math.max(...dna.features.map(f => f.track + 1), 1);
+  const trackH = 14, trackGap = 5;
+  dna.features.forEach((f, idx) => {
+    const base = R - 10 - f.track * (trackH + trackGap);
+    const [fs, fe] = featureRange(f);
+    f.segments.forEach((seg, si) => {
+      let mode = null;
+      if (f.direction === 1) mode = seg.end === fe ? "fwd" : null;
+      else if (f.direction === 2) mode = seg.start === fs ? "rev" : null;
+      else if (f.direction === 3)
+        mode = (seg.start === fs && seg.end === fe) ? "bi" : seg.end === fe ? "fwd" : seg.start === fs ? "rev" : null;
+      const g = el("g", { class: "feat" }, svg);
+      const color = seg.color || TYPE_COLORS[f.type] || "#8fa8cc";
+      const d = featurePath(cx, cy, base - trackH, base, ang, seg.start, Math.min(seg.end, dna.length), mode);
+      const path = el("path", { d, fill: color, stroke: "#0b0f17", "stroke-width": 0.8, opacity: 0.92 }, g);
+      path.dataset.featIdx = idx;
+      if (f.segments.length > 1 && si === 0) path.setAttribute("opacity", 1);
+      path.addEventListener("click", () => select(idx));
+      el("title", {}, path).textContent = `${f.name} (${f.type})`;
+    });
+    // label
+    const [s, e] = featureRange(f);
+    if (e - s > dna.length * 0.015) {
+      const mid = (s + e) / 2;
+      const a = ang(mid);
+      const [lx, ly] = polar(cx, cy, R + 4, a);
+      const deg = (a * 180 / Math.PI + 90 + 360) % 360;
+      const flip = deg > 90 && deg < 270;
+      const t = el("text", {
+        x: lx, y: ly, fill: "#c9d6ea", "font-size": 10.5, "font-weight": 600,
+        "text-anchor": flip ? "end" : "start",
+        transform: `rotate(${(a * 180 / Math.PI + 90).toFixed(2)},${lx.toFixed(1)},${ly.toFixed(1)})`,
+      }, svg);
+      t.textContent = f.name;
+    }
+  });
+
+  // primers
+  for (const p of dna.primers) {
+    if (p.start == null) continue;
+    const mid = (p.start + p.end) / 2, a = ang(mid);
+    const [x, y] = polar(cx, cy, R - 46, a);
+    const tri = el("polygon", {
+      points: `0,-4 4,${p.strand === 1 ? 6 : -6} -4,${p.strand === 1 ? 6 : -6}`,
+      fill: p.strand === 1 ? "#7dff8a" : "#ff7db8",
+      transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(a * 180 / Math.PI + 90).toFixed(1)})`,
+    }, svg);
+    el("title", {}, tri).textContent = `primer ${p.name}`;
+  }
+
+  // restriction sites (inner ticks)
+  const sites = enzymeSites(dna.sequence, dna.circular);
+  for (const s of sites) {
+    const a = ang(s.pos);
+    const [x1, y1] = polar(cx, cy, R - 96, a);
+    const [x2, y2] = polar(cx, cy, R - 86, a);
+    const l = el("line", { x1, y1, x2, y2, stroke: "#6a7ba0", "stroke-width": 1.4 }, svg);
+    el("title", {}, l).textContent = `${s.name} @ ${s.pos + 1}`;
+  }
+
+  // center info
+  const t1 = el("text", { x: cx, y: cy - 8, "text-anchor": "middle", fill: "#e8f0ff", "font-size": 15, "font-weight": 700 }, svg);
+  t1.textContent = name;
+  const t2 = el("text", { x: cx, y: cy + 12, "text-anchor": "middle", fill: "#67799a", "font-size": 11 }, svg);
+  t2.textContent = `${dna.length.toLocaleString()} bp ${dna.circular ? "○" : "—"}`;
+
+  renderSidebar(dna, sites);
+  if (state.selected >= 0 && state.selected < dna.features.length) markSelected();
+  else document.getElementById("detail").textContent = "Click a feature on the map.";
+  updateSelArc();
+}
+
+function renderSidebar(dna, sites) {
+  const fl = document.getElementById("featlist");
+  fl.innerHTML = "";
+  dna.features.forEach((f, i) => {
+    const [s, e] = featureRange(f);
+    const d = document.createElement("div");
+    d.className = "row";
+    d.dataset.i = i;
+    d.innerHTML = `<span class="sw" style="background:${f.segments[0]?.color || TYPE_COLORS[f.type] || "#8fa8cc"}"></span>
+      <span>${esc(f.name)}</span><span class="pos">${f.type} ${s + 1}–${e}${f.direction ? (f.direction === 1 ? " →" : f.direction === 2 ? " ←" : " ↔") : ""}</span>`;
+    d.addEventListener("click", () => select(i));
+    fl.appendChild(d);
+  });
+  const pl = document.getElementById("primerlist");
+  pl.innerHTML = "";
+  for (const p of dna.primers) {
+    const d = document.createElement("div");
+    d.className = "row";
+    d.innerHTML = `<span class="sw" style="background:${p.strand === 1 ? "#7dff8a" : "#ff7db8"}"></span>
+      <span>${esc(p.name)}</span><span class="pos">${p.start != null ? p.start + 1 + "–" + p.end : "—"}</span>`;
+    pl.appendChild(d);
+  }
+  const el2 = document.getElementById("enzlist");
+  el2.innerHTML = "";
+  for (const s of sites) {
+    const d = document.createElement("div");
+    d.className = "row";
+    d.innerHTML = `<span class="sw" style="background:#6a7ba0"></span><span>${s.name}</span><span class="pos">${s.pos + 1}</span>`;
+    el2.appendChild(d);
+  }
+}
+
+function select(i) {
+  state.selected = i;
+  markSelected();
+  const f = state.dna.features[i];
+  if (seqView.dna === state.dna && f.segments.length) {
+    const { w } = seqMetrics();
+    const mid = (f.segments[0].start + f.segments[f.segments.length - 1].end) / 2;
+    seqView.offset = mid - (w / seqView.ppb) / 2;
+    clampOffset();
+    renderSeq();
+  }
+  const q = Object.entries(f.qualifiers).map(([k, v]) => `  ${k}: ${v.join("; ")}`).join("\n");
+  document.getElementById("detail").innerHTML =
+    `<b>${esc(f.name)}</b>  ${f.type}\nsegments: ${f.segments.map(s => `${s.start + 1}–${s.end}${s.color ? " " + s.color : ""}`).join(", ")}\nstrand: ${["none", "top →", "bottom ←", "bidirectional"][f.direction]}${q ? "\n" + esc(q) : ""}`;
+}
+
+function markSelected() {
+  document.querySelectorAll("svg .feat path").forEach((p) =>
+    p.classList.toggle("sel", +p.dataset.featIdx === state.selected));
+  document.querySelectorAll("#featlist .row").forEach((r) =>
+    r.classList.toggle("sel", +r.dataset.i === state.selected));
+}
+
+// ---------------- sequence panel ----------------
+
+const RULER_H = 16, LANE_H = 13, SEQ_Y_OFF = 10;
+
+function initSeq(dna) {
+  seqView.dna = dna;
+  seqView.sel = null;
+  seqView.offset = 0;
+  renderSeq();
+}
+
+function seqMetrics() {
+  const cv = document.getElementById("seqcv");
+  const dna = seqView.dna;
+  const nLanes = dna.features.length ? Math.max(...dna.features.map((f) => f.track + 1)) : 1;
+  const seqY = RULER_H + nLanes * LANE_H + 6 + SEQ_Y_OFF;
+  return { cv, dna, nLanes, seqY, w: cv.clientWidth || 800, h: cv.clientHeight || 210 };
+}
+
+function niceStep(px) {
+  for (const t of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000])
+    if (t * seqView.ppb >= px) return t;
+  return 20000;
+}
+
+function clampOffset() {
+  const { dna, w } = seqMetrics();
+  seqView.offset = Math.max(0, Math.min(dna.length - w / seqView.ppb, seqView.offset));
+  if (seqView.offset < 0) seqView.offset = 0;
+}
+
+function renderSeq() {
+  if (!seqView.dna) return;
+  const { cv, dna, nLanes, seqY, w, h } = seqMetrics();
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr)) cv.width = Math.round(w * dpr);
+  if (cv.height !== Math.round(h * dpr)) cv.height = Math.round(h * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "#0d1320"; ctx.fillRect(0, 0, w, h);
+  clampOffset();
+  const { ppb, offset } = seqView;
+  const xOf = (b) => (b - offset) * ppb;
+  const start = Math.max(0, Math.floor(offset) - 1);
+  const end = Math.min(dna.length, Math.ceil(offset + w / ppb) + 1);
+
+  // selection highlight (behind everything else)
+  if (seqView.sel) {
+    const { a, b } = seqView.sel;
+    ctx.fillStyle = "rgba(77,138,208,.25)";
+    ctx.fillRect(xOf(a), 0, (b - a) * ppb + 1, h);
+    ctx.strokeStyle = "rgba(120,180,255,.8)";
+    ctx.beginPath();
+    ctx.moveTo(xOf(a) + .5, 0); ctx.lineTo(xOf(a) + .5, h);
+    ctx.moveTo(xOf(b) + .5, 0); ctx.lineTo(xOf(b) + .5, h);
+    ctx.stroke();
+  }
+
+  // ruler
+  const step = niceStep(60);
+  ctx.fillStyle = "#67799a"; ctx.font = "9px system-ui"; ctx.textAlign = "left";
+  for (let b = Math.ceil(start / step) * step; b < end; b += step) {
+    const x = xOf(b);
+    ctx.fillRect(x, RULER_H - 6, 1, 6);
+    ctx.fillText(b.toLocaleString(), x + 2, RULER_H - 6);
+    if (ppb * 10 > 9 && step <= 10) {
+      ctx.fillStyle = "#1a2436";
+      for (let k = b + 1; k < Math.min(b + step, end); k++) {
+        if (k % 10 === 0 && k % step !== 0) ctx.fillRect(xOf(k), seqY - 4, 1, 4);
+      }
+      ctx.fillStyle = "#67799a";
+    }
+  }
+  ctx.fillRect(0, RULER_H - 1, w, 1);
+
+  // feature lanes
+  seqView.hitRects = [];
+  for (const f of dna.features) {
+    const color = (f.segments[0] && f.segments[0].color) || TYPE_COLORS[f.type] || "#8fa8cc";
+    const y = RULER_H + 2 + f.track * LANE_H;
+    for (const seg of f.segments) {
+      const x0 = xOf(seg.start), x1 = xOf(seg.end);
+      if (x1 < 0 || x0 > w) continue;
+      const wpx = Math.max(2, x1 - x0);
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = color;
+      ctx.fillRect(x0, y, wpx, LANE_H - 4);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "#0d1320"; ctx.strokeRect(x0 + .5, y + .5, wpx - 1, LANE_H - 5);
+      if (wpx > 45) {
+        ctx.fillStyle = "#0b0f17"; ctx.font = "bold 8.5px system-ui";
+        ctx.save(); ctx.beginPath(); ctx.rect(x0, y, wpx, LANE_H); ctx.clip();
+        ctx.fillText(f.name, x0 + 3, y + LANE_H - 6);
+        ctx.restore();
+      }
+      seqView.hitRects.push({ i: dna.features.indexOf(f), x0, x1, y0: y, y1: y + LANE_H - 4 });
+    }
+  }
+
+  // sequence glyphs (letters at high zoom, barcode at low zoom)
+  const sy = seqY + 11;
+  if (ppb >= 2.5) {
+    ctx.font = "11px ui-monospace, Menlo, monospace";
+    ctx.textBaseline = "alphabetic";
+    for (let i = start; i < end; i++) {
+      const ch = dna.sequence[i];
+      ctx.fillStyle = ch === ch.toLowerCase() && /[acgtn]/.test(ch) ? "#6a7f9f" : "#c9d6ea";
+      ctx.fillText(ch, xOf(i) + (ppb - Math.min(ppb, 6.6)) / 2, sy);
+    }
+  } else {
+    ctx.strokeStyle = "rgba(201,214,234,.5)";
+    ctx.beginPath();
+    for (let i = start; i < end; i++) {
+      const x = xOf(i);
+      ctx.moveTo(x, seqY + 2); ctx.lineTo(x, seqY + 12);
+    }
+    ctx.stroke();
+  }
+
+  // status
+  const info = document.getElementById("seqinfo");
+  info.textContent = seqView.sel
+    ? `selected ${(seqView.sel.a + 1).toLocaleString()}–${seqView.sel.b.toLocaleString()} · ${(seqView.sel.b - seqView.sel.a).toLocaleString()} bp`
+    : `${dna.length.toLocaleString()} bp — drag to select`;
+}
+
+function updateSelArc() {
+  if (!mapGeom) return;
+  const arc = document.getElementById("selarc");
+  const infoT = document.getElementById("selinfo");
+  if (!arc) return;
+  if (!seqView.sel) { arc.setAttribute("display", "none"); infoT.textContent = ""; return; }
+  const { a, b } = seqView.sel;
+  const { cx, cy, R, ang } = mapGeom;
+  const a0 = ang(a), a1 = ang(b);
+  const [x0, y0] = polar(cx, cy, R - 4, a0);
+  const [x1, y1] = polar(cx, cy, R - 4, a1);
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  arc.setAttribute("d", `M${x0.toFixed(2)},${y0.toFixed(2)} A${R - 4},${R - 4} 0 ${large} 1 ${x1.toFixed(2)},${y1.toFixed(2)}`);
+  arc.removeAttribute("display");
+  infoT.textContent = `${(a + 1).toLocaleString()}–${b.toLocaleString()} · ${(b - a).toLocaleString()} bp`;
+}
+
+function seqBaseAt(x) {
+  const { dna } = seqMetrics();
+  return Math.max(0, Math.min(dna.length, Math.round(seqView.offset + x / seqView.ppb)));
+}
+
+function wireSeqPanel() {
+  const cv = document.getElementById("seqcv");
+  cv.addEventListener("pointerdown", (e) => {
+    const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const hit = seqView.hitRects.find((h) => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1);
+    if (hit) { select(hit.i); return; }
+    seqView.dragging = true;
+    seqView.anchor = seqBaseAt(x);
+    seqView.sel = { a: seqView.anchor, b: seqView.anchor };
+    cv.setPointerCapture(e.pointerId);
+    renderSeq(); updateSelArc();
+  });
+  cv.addEventListener("pointermove", (e) => {
+    if (!seqView.dragging) return;
+    const x = e.clientX - cv.getBoundingClientRect().left;
+    const cur = seqBaseAt(x);
+    seqView.sel = { a: Math.min(seqView.anchor, cur), b: Math.max(seqView.anchor, cur) };
+    renderSeq(); updateSelArc();
+  });
+  cv.addEventListener("pointerup", () => { seqView.dragging = false; });
+  cv.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      const r = cv.getBoundingClientRect();
+      const anchorBase = seqView.offset + (e.clientX - r.left) / seqView.ppb;
+      seqView.ppb = Math.max(1, Math.min(24, seqView.ppb * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
+      seqView.offset = anchorBase - (e.clientX - r.left) / seqView.ppb;
+    } else {
+      const scroll = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      seqView.offset += scroll / seqView.ppb;
+    }
+    clampOffset(); renderSeq();
+  }, { passive: false });
+  const zoom = (f) => {
+    const { w } = seqMetrics();
+    const center = seqView.offset + w / seqView.ppb / 2;
+    seqView.ppb = Math.max(1, Math.min(24, seqView.ppb * f));
+    seqView.offset = center - (w / seqView.ppb) / 2;
+    clampOffset(); renderSeq();
+  };
+  document.getElementById("zoomin").addEventListener("click", () => zoom(1.6));
+  document.getElementById("zoomout").addEventListener("click", () => zoom(1 / 1.6));
+  document.getElementById("zoomfit").addEventListener("click", () => {
+    const { dna, w } = seqMetrics();
+    seqView.ppb = w / dna.length;
+    seqView.offset = 0;
+    renderSeq();
+  });
+  document.getElementById("copybtn").addEventListener("click", async () => {
+    if (!seqView.sel) return;
+    const { a, b } = seqView.sel;
+    try { await navigator.clipboard.writeText(seqView.dna.sequence.slice(a, b)); } catch {}
+  });
+  cv.addEventListener("dblclick", () => { seqView.sel = null; renderSeq(); updateSelArc(); });
+}
+wireSeqPanel();
+
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+function showRecords(recs, label) {
+  const sel = document.getElementById("reclist");
+  if (recs.length > 1) {
+    sel.innerHTML = "";
+    recs.forEach((r, i) => {
+      const o = document.createElement("option");
+      o.value = i;
+      o.textContent = r.notes.Name || `record ${i + 1}`;
+      sel.appendChild(o);
+    });
+    sel.hidden = false;
+    sel.onchange = () => {
+      const r = recs[+sel.value];
+      render(r); initSeq(r);
+      document.getElementById("name").textContent = r.notes.Name || "record";
+    };
+    sel.value = "0";
+  } else {
+    sel.hidden = true;
+    sel.innerHTML = "";
+  }
+  const dna = recs[0];
+  render(dna);
+  initSeq(dna);
+  if (label) document.getElementById("name").textContent = label.replace(/\.[a-z0-9]+$/i, "");
+}
+
+function loadBytes(buf, label) {
+  try {
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(buf);
+    const isGenBank = /^\s*(LOCUS|DEFINITION|ACCESSION|VERSION)\b/m.test(text.slice(0, 256));
+    const recs = isGenBank ? GenBank.parseAll(text) : [SnapGene.parse(buf)];
+    if (!recs.length) throw new Error("no GenBank records found");
+    showRecords(recs, label);
+  } catch (e) {
+    alert("Could not parse file: " + e.message);
+  }
+}
+
+function fetchNCBI(ids) {
+  ids = ids.trim();
+  if (!ids) return;
+  const meta = document.getElementById("meta");
+  const btn = document.getElementById("fetchbtn");
+  btn.disabled = true;
+  meta.textContent = "fetching " + ids + " from NCBI…";
+  const url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi" +
+    "?db=nuccore&id=" + encodeURIComponent(ids) + "&rettype=gb&retmode=text";
+  fetch(url).then((r) => {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.text();
+  }).then((t) => {
+    const recs = GenBank.parseAll(t);
+    if (!recs.length) throw new Error("no GenBank records returned");
+    document.getElementById("ncbi").value = ids;
+    document.getElementById("name").textContent =
+      recs.length > 1 ? `${ids} (${recs.length} records)` : (recs[0].notes.Name || ids);
+    showRecords(recs);
+    btn.disabled = false;
+  }).catch((e) => {
+    meta.textContent = "";
+    btn.disabled = false;
+    alert("NCBI fetch failed: " + e.message);
+  });
+}
+document.getElementById("fetchbtn").addEventListener("click", () =>
+  fetchNCBI(document.getElementById("ncbi").value));
+document.getElementById("ncbi").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") fetchNCBI(e.target.value);
+});
+
+document.getElementById("file").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) f.arrayBuffer().then(b => loadBytes(b, f.name));
+});
+
+const wrap = document.getElementById("mapwrap");
+for (const ev of ["dragover", "dragenter"]) wrap.addEventListener(ev, (e) => { e.preventDefault(); wrap.classList.add("drag"); });
+for (const ev of ["dragleave", "drop"]) wrap.addEventListener(ev, (e) => { e.preventDefault(); wrap.classList.remove("drag"); });
+wrap.addEventListener("drop", (e) => {
+  const f = e.dataTransfer.files[0];
+  if (f) f.arrayBuffer().then(b => loadBytes(b, f.name));
+});
+
+const qp = new URLSearchParams(location.search).get("open");
+if (qp) fetch(qp).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(b => loadBytes(b, qp)).catch(err => console.warn("auto-open failed:", err));
+const qn = new URLSearchParams(location.search).get("ncbi");
+if (qn) fetchNCBI(qn);
+window.addEventListener("resize", () => { if (state.dna) { render(state.dna); renderSeq(); } });
+</script>
+</body>
+</html>
