@@ -2,6 +2,8 @@
 
 A dependency-free, browser-based plasmid/vector viewer. Drop in a SnapGene `.dna` or GenBank file — or fetch a record straight from NCBI — and get a circular map, feature/ primer lists, restriction sites, and a zoomable sequence view. No build step, no libraries; just open the HTML.
 
+**Live demo:** <https://aminmahpour.github.io/webPlasmid/>
+
 ## Files
 
 | File | Purpose |
@@ -48,3 +50,7 @@ URL parameters:
 - Primer tracks exist only for SnapGene files (GenBank `/primer_bind` features render as regular features).
 - The enzyme list is hardcoded in `vector_viewer.html` (`ENZYMES`) — edit that map to add enzymes.
 - No GenBank writing/export and no FASTA support.
+
+## License
+
+Released under the [MIT License](LICENSE).
