@@ -34,6 +34,12 @@
   .row:hover { background:#16223a }
   .row .sw { width:9px; height:9px; border-radius:2px; flex:none; transform:translateY(1px) }
   .row .pos { margin-left:auto; color:var(--dim); font-size:11px; white-space:nowrap }
+  #enzpick .enzbar { display:flex; gap:6px; margin-bottom:6px }
+  #enzpick .enzbar button { padding:2px 10px; font-size:11px }
+  #enzpick .enzgrid { display:grid; grid-template-columns:1fr 1fr; gap:2px 10px; margin-bottom:8px }
+  #enzpick label { display:flex; align-items:center; gap:5px; font-size:11.5px; cursor:pointer }
+  #enzpick input { accent-color:#4d8ad0; width:12px; height:12px; flex:none }
+  #enzpick .cnt { margin-left:auto; color:var(--dim); font-size:10.5px }
   #detail { border-top:1px solid var(--line); padding-top:8px; font-size:12px; color:var(--dim); white-space:pre-wrap; word-break:break-word }
   #detail b { color:#e8f0ff }
   .feat path { cursor:pointer }
@@ -60,7 +66,7 @@
     <aside>
       <h2>Features</h2><div id="featlist"></div>
       <h2>Primers</h2><div id="primerlist"></div>
-      <h2>Restriction sites</h2><div id="enzlist"></div>
+      <h2>Restriction sites</h2><div id="enzpick"></div><div id="enzlist"></div>
       <h2>Selection</h2><div id="detail">Click a feature on the map.</div>
     </aside>
   </div>
@@ -93,7 +99,7 @@ const TYPE_COLORS = { CDS:"#3aa0ff", promoter:"#ffb84d", terminator:"#c79bff", r
   primer_bind:"#7dff8a", protein_bind:"#ffd24a", misc_feature:"#8fa8cc", regulatory:"#ff7db8",
   misc_restriction:"#6a7ba0", source:"#445577" };
 
-const state = { dna:null, selected:-1 };
+const state = { dna:null, selected:-1, hiddenEnzymes:new Set() };
 let mapGeom = null;
 const seqView = { dna:null, ppb:4, offset:0, sel:null, anchor:null, dragging:false, hitRects:[], translate:false };
 
@@ -354,14 +360,60 @@ function render(dna) {
     el("title", {}, tri).textContent = `primer ${p.name}`;
   }
 
-  // restriction sites (inner ticks)
-  const sites = enzymeSites(dna.sequence, dna.circular);
-  for (const s of sites) {
-    const a = ang(s.pos);
-    const [x1, y1] = polar(cx, cy, R - 96, a);
-    const [x2, y2] = polar(cx, cy, R - 86, a);
-    const l = el("line", { x1, y1, x2, y2, stroke: "#6a7ba0", "stroke-width": 1.4 }, svg);
-    el("title", {}, l).textContent = `${s.name} @ ${s.pos + 1}`;
+  // restriction sites: connector lines into the inner disc, names staggered on depth levels
+  const allSites = enzymeSites(dna.sequence, dna.circular);
+  const sites = allSites.filter((s) => !state.hiddenEnzymes.has(s.name));
+  {
+    const enzTop = R - 10 - nTracks * (trackH + trackGap) - 6; // below the innermost feature ring
+    const enzStep = 12;
+    const enzMin = 96; // keep clear of the centered plasmid-name text
+    const enzCap = Math.max(1, Math.floor((enzTop - enzMin) / enzStep) + 1);
+    const angn = (v) => ((v % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const adist = (u, v) => { const d = Math.abs(angn(u) - angn(v)); return Math.min(d, Math.PI * 2 - d); };
+    const items = sites.map((s, si) => {
+      const a = ang(s.pos);
+      const flip = ((a * 180 / Math.PI + 90 + 360) % 360) > 90 && ((a * 180 / Math.PI + 90 + 360) % 360) < 270;
+      return { si, a, flip, w: s.name.length * 5.6 + 5 };
+    });
+    items.sort((x, y) => y.w - x.w || x.a - y.a);
+    const taken = [];
+    // place each label's tangential arc at the shallowest depth level with room;
+    // the arc's angular half-width depends on that level's radius (smaller r ⇒ wider)
+    const arcOf = (it, level) => {
+      const r = enzTop - enzStep * level;
+      const c = it.a + (it.flip ? -1 : 1) * (it.w / 2) / r;
+      return [c, (it.w / 2 + 3) / r];
+    };
+    for (const it of items) {
+      let level = 0;
+      while (level < enzCap) {
+        const [c, hw] = arcOf(it, level);
+        if (!(taken[level] || []).some(([c2, hw2]) => adist(c, c2) < hw + hw2 - 0.01)) break;
+        level++;
+      }
+      if (level < enzCap) taken[level] = (taken[level] || []).concat([arcOf(it, level)]);
+      it.level = level; // == enzCap → no room, line only
+    }
+    const bySi = new Map(items.map((it) => [it.si, it]));
+    sites.forEach((s, si) => {
+      const a = ang(s.pos);
+      const lvl = bySi.get(si);
+      const capped = !lvl || lvl.level >= enzCap;
+      const labR = enzTop - enzStep * (capped ? 0 : lvl.level);
+      const [x1, y1] = polar(cx, cy, R, a);
+      const [x2, y2] = polar(cx, cy, labR, a);
+      const l = el("line", { x1: x1.toFixed(1), y1: y1.toFixed(1), x2: x2.toFixed(1), y2: y2.toFixed(1),
+        stroke: "#6a7ba0", "stroke-width": 1 }, svg);
+      el("title", {}, l).textContent = `${s.name} @ ${s.pos + 1}`;
+      if (capped) return;
+      const deg = a * 180 / Math.PI;
+      const [lx, ly] = polar(cx, cy, labR, a);
+      const t = el("text", { x: lx.toFixed(1), y: ly.toFixed(1), fill: "#8fa8cc", "font-size": 8.5,
+        "font-weight": 600, "dominant-baseline": "middle",
+        "text-anchor": lvl.flip ? "end" : "start",
+        transform: `rotate(${(deg + 90).toFixed(2)},${lx.toFixed(1)},${ly.toFixed(1)})` }, svg);
+      t.textContent = s.name;
+    });
   }
 
   // center info
@@ -370,13 +422,13 @@ function render(dna) {
   const t2 = el("text", { x: cx, y: cy + 12, "text-anchor": "middle", fill: "#67799a", "font-size": 11 }, svg);
   t2.textContent = `${dna.length.toLocaleString()} bp ${dna.circular ? "○" : "—"}`;
 
-  renderSidebar(dna, sites);
+  renderSidebar(dna, sites, allSites);
   if (state.selected >= 0 && state.selected < dna.features.length) markSelected();
   else document.getElementById("detail").textContent = "Click a feature on the map.";
   updateSelArc();
 }
 
-function renderSidebar(dna, sites) {
+function renderSidebar(dna, sites, allSites) {
   const fl = document.getElementById("featlist");
   fl.innerHTML = "";
   dna.features.forEach((f, i) => {
@@ -398,14 +450,72 @@ function renderSidebar(dna, sites) {
       <span>${esc(p.name)}</span><span class="pos">${p.start != null ? p.start + 1 + "–" + p.end : "—"}</span>`;
     pl.appendChild(d);
   }
+  // enzyme picker: checkbox per enzyme with cut count, plus All / None
+  const elp = document.getElementById("enzpick");
+  elp.innerHTML = "";
+  const bar = document.createElement("div");
+  bar.className = "enzbar";
+  const bAll = document.createElement("button");
+  bAll.textContent = "All";
+  bAll.addEventListener("click", () => { state.hiddenEnzymes.clear(); render(state.dna); });
+  const bNone = document.createElement("button");
+  bNone.textContent = "None";
+  bNone.addEventListener("click", () => { state.hiddenEnzymes = new Set(Object.keys(ENZYMES)); render(state.dna); });
+  bar.append(bAll, bNone);
+  const grid = document.createElement("div");
+  grid.className = "enzgrid";
+  const counts = new Map();
+  for (const s of allSites) counts.set(s.name, (counts.get(s.name) || 0) + 1);
+  for (const name of Object.keys(ENZYMES).sort()) {
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !state.hiddenEnzymes.has(name);
+    cb.addEventListener("change", () => {
+      if (cb.checked) state.hiddenEnzymes.delete(name);
+      else state.hiddenEnzymes.add(name);
+      render(state.dna);
+    });
+    lab.appendChild(cb);
+    const nm = document.createElement("span");
+    nm.textContent = name;
+    const cnt = document.createElement("span");
+    cnt.className = "cnt";
+    cnt.textContent = counts.get(name) || 0;
+    lab.append(nm, cnt);
+    grid.appendChild(lab);
+  }
+  elp.append(bar, grid);
+
   const el2 = document.getElementById("enzlist");
   el2.innerHTML = "";
   for (const s of sites) {
     const d = document.createElement("div");
     d.className = "row";
-    d.innerHTML = `<span class="sw" style="background:#6a7ba0"></span><span>${s.name}</span><span class="pos">${s.pos + 1}</span>`;
+    d.dataset.enz = s.name;
+    d.dataset.pos = s.pos;
+    d.innerHTML = `<span class="sw" style="background:#6a7ba0"></span><span>${esc(s.name)}</span><span class="pos">${s.pos + 1}</span>`;
+    d.addEventListener("click", () => selectEnzSite(s, d));
     el2.appendChild(d);
   }
+}
+
+function selectEnzSite(s, row) {
+  state.selected = -1;
+  markSelected();
+  if (row) row.classList.add("sel");
+  const motif = ENZYMES[s.name] || "";
+  const b = Math.min(state.dna.length, s.pos + motif.length);
+  if (seqView.dna === state.dna) {
+    seqView.sel = { a: s.pos, b };
+    const { w } = seqMetrics();
+    seqView.offset = s.pos + motif.length / 2 - (w / seqView.ppb) / 2;
+    clampOffset();
+    renderSeq();
+    updateSelArc();
+  }
+  document.getElementById("detail").innerHTML =
+    `<b>${esc(s.name)}</b>  restriction site\nsite: ${s.pos + 1}–${b}\nmotif: ${esc(motif)}`;
 }
 
 function select(i) {
@@ -434,6 +544,7 @@ function markSelected() {
     p.classList.toggle("sel", +p.dataset.featIdx === state.selected));
   document.querySelectorAll("#featlist .row").forEach((r) =>
     r.classList.toggle("sel", +r.dataset.i === state.selected));
+  document.querySelectorAll("#enzlist .row.sel").forEach((r) => r.classList.remove("sel"));
 }
 
 // ---------------- sequence panel ----------------
