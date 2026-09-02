@@ -2,46 +2,81 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Vector Viewer — SnapGene .dna / GenBank</title>
 <style>
-  :root { --bg:#0b0f17; --panel:#111827; --line:#22314a; --txt:#c9d6ea; --dim:#67799a; }
+  :root { --bg:#0b0f17; --panel:#111827; --line:#22314a; --txt:#c9d6ea; --dim:#67799a;
+    --hi:#e8f0ff; --btn:#16223a; --btnHover:#1e2f4f; --field:#0d1320; --seqbg:#0d1320;
+    --accent:#4d8ad0; --drop:#8fb8ff; --dropBg:rgba(10,20,40,.6) }
+  /* light palette; keep in sync with THEMES.light in the script */
+  html[data-theme="light"] { --bg:#f2f5fa; --panel:#ffffff; --line:#ccd6e5; --txt:#22334d; --dim:#5c6f8c;
+    --hi:#0e2138; --btn:#e2e8f2; --btnHover:#cfdbea; --field:#ffffff; --seqbg:#f7f9fc;
+    --accent:#2b6cb8; --drop:#2b6cb8; --dropBg:rgba(190,210,235,.65) }
   * { box-sizing:border-box; margin:0 }
-  body { background:var(--bg); color:var(--txt); font:14px "Segoe UI", system-ui, sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden }
+  body { background:var(--bg); color:var(--txt); font:14px "Segoe UI", system-ui, sans-serif; height:100vh; height:100dvh; display:flex; flex-direction:column; overflow:hidden }
   header { display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel) }
-  header h1 { font-size:16px; color:#e8f0ff }
+  header h1 { font-size:16px; color:var(--hi) }
   header .meta { color:var(--dim); font-size:12px }
   header .spacer { flex:1 }
-  button, label.btn { background:#16223a; color:var(--txt); border:1px solid #2e4160; border-radius:5px; padding:6px 12px; font:600 13px inherit; cursor:pointer }
-  button:hover, label.btn:hover { background:#1e2f4f }
-  #ncbi { background:#0d1320; color:var(--txt); border:1px solid #2e4160; border-radius:5px; padding:6px 10px; font:13px inherit; width:210px }
+  #themeseg { display:flex; border:1px solid var(--line); border-radius:5px; overflow:hidden }
+  #themeseg button { border:0; border-radius:0; padding:5px 9px; font-size:12px }
+  #themeseg button + button { border-left:1px solid var(--line) }
+  #themeseg button[aria-pressed="true"] { background:var(--btnHover); color:var(--hi) }
+  button, label.btn { background:var(--btn); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:6px 12px; font:600 13px inherit; cursor:pointer }
+  button:hover, label.btn:hover { background:var(--btnHover) }
+  #ncbi { background:var(--field); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:6px 10px; font:13px inherit; width:210px }
   #ncbi::placeholder { color:var(--dim) }
-  select#reclist { background:#16223a; color:var(--txt); border:1px solid #2e4160; border-radius:5px; padding:5px 8px; font:13px inherit }
+  select#reclist { background:var(--btn); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:5px 8px; font:13px inherit }
   main { flex:1; display:flex; flex-direction:column; min-height:0 }
   .toprow { flex:1; display:flex; min-height:0 }
-  #seqpanel { height:236px; border-top:1px solid var(--line); background:#0d1320; display:flex; flex-direction:column; flex:none }
+  #seqpanel { height:236px; border-top:1px solid var(--line); background:var(--seqbg); display:flex; flex-direction:column; flex:none }
   #seqpanel.translate-on { height:294px }
   #seqcv { flex:1; min-height:0; width:100%; display:block; cursor:text }
   #seqtools { order:-1; display:flex; gap:5px; align-items:center; justify-content:flex-end; padding:3px 8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:11px; color:var(--dim) }
   #seqinfo { margin-right:auto }
   #seqtools button { padding:2px 8px; font-size:12px }
   #mapwrap { flex:1; position:relative; display:flex; align-items:center; justify-content:center }
-  #mapwrap.drag::after { content:"Drop .dna / .gb file"; position:absolute; inset:12px; border:2px dashed #4d8ad0; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; color:#8fb8ff; background:rgba(10,20,40,.6); z-index:5 }
+  #mapwrap.drag::after { content:"Drop .dna / .gb file"; position:absolute; inset:12px; border:2px dashed var(--accent); border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; color:var(--drop); background:var(--dropBg); z-index:5 }
   svg { width:100%; height:100% }
   aside { width:300px; border-left:1px solid var(--line); background:var(--panel); overflow-y:auto; padding:12px }
   aside h2 { font-size:11px; letter-spacing:2px; color:var(--dim); text-transform:uppercase; margin:14px 0 6px }
   aside h2:first-child { margin-top:0 }
   .row { padding:5px 6px; border-radius:4px; cursor:pointer; display:flex; gap:8px; align-items:baseline; font-size:12.5px }
-  .row:hover { background:#16223a }
+  .row:hover { background:var(--btn) }
   .row .sw { width:9px; height:9px; border-radius:2px; flex:none; transform:translateY(1px) }
   .row .pos { margin-left:auto; color:var(--dim); font-size:11px; white-space:nowrap }
+  #enzpick .enzbar { display:flex; gap:6px; margin-bottom:6px }
+  #enzpick .enzbar button { padding:2px 10px; font-size:11px }
+  #enzpick .enzgrid { display:grid; grid-template-columns:1fr 1fr; gap:2px 10px; margin-bottom:8px }
+  #enzpick label { display:flex; align-items:center; gap:5px; font-size:11.5px; cursor:pointer }
+  #enzpick input { accent-color:var(--accent); width:12px; height:12px; flex:none }
+  #enzpick .cnt { margin-left:auto; color:var(--dim); font-size:10.5px }
   #detail { border-top:1px solid var(--line); padding-top:8px; font-size:12px; color:var(--dim); white-space:pre-wrap; word-break:break-word }
-  #detail b { color:#e8f0ff }
+  #detail b { color:var(--hi) }
   .feat path { cursor:pointer }
   .feat path:hover { filter:brightness(1.3) }
   .feat path.sel { stroke:#ffffff; stroke-width:1.8; filter:brightness(1.45) drop-shadow(0 0 4px rgba(255,255,255,.55)) }
-  .row.sel { background:#1e2f4f; outline:1px solid #4d8ad0 }
+  .row.sel { background:var(--btnHover); outline:1px solid var(--accent) }
   .empty { color:var(--dim); padding:40px; text-align:center }
   .tick text { font-size:9px; fill:var(--dim) }
+  #seqcv { touch-action:none }
+  #panelbtn { display:none }
+  #scrim { display:none }
+  /* phones / small windows: sidebar becomes a slide-in drawer, header wraps */
+  @media (max-width: 820px) {
+    header { flex-wrap:wrap; gap:8px 10px; padding:8px 10px }
+    header h1 { font-size:14px }
+    header .meta { font-size:11px }
+    #ncbi { width:auto; flex:1 1 130px; min-width:110px }
+    #panelbtn { display:inline-block }
+    aside { position:fixed; top:0; bottom:0; right:0; width:min(320px,86vw); z-index:20;
+      transform:translateX(105%); transition:transform .22s ease; box-shadow:-8px 0 24px rgba(0,0,0,.5) }
+    aside.open { transform:none }
+    #scrim.show { display:block; position:fixed; inset:0; background:rgba(5,8,14,.55); z-index:15 }
+    #seqtools { flex-wrap:wrap }
+    #seqpanel { height:190px }
+    #seqpanel.translate-on { height:244px }
+  }
 </style>
 </head>
 <body>
@@ -49,18 +84,25 @@
   <h1 id="name">Vector Viewer</h1>
   <span class="meta" id="meta"></span>
   <span class="spacer"></span>
+  <div id="themeseg" role="group" aria-label="Color theme">
+    <button data-theme="auto" title="Follow the system setting">Auto</button>
+    <button data-theme="dark" title="Always dark">Dark</button>
+    <button data-theme="light" title="Always light">Light</button>
+  </div>
   <input id="ncbi" placeholder="NCBI accession(s), e.g. X83542" spellcheck="false">
   <button id="fetchbtn" title="Fetch from NCBI">Fetch</button>
   <select id="reclist" hidden></select>
   <label class="btn">Open file<input type="file" id="file" accept=".dna,.gb,.gbk,.genbank" hidden></label>
+  <button id="panelbtn" title="Show features, primers and sites">☰ Panel</button>
 </header>
+<div id="scrim"></div>
 <main>
   <div class="toprow">
     <div id="mapwrap"><div class="empty">Drop a SnapGene <b>.dna</b> or GenBank <b>.gb</b> file here, click “Open file”,<br>or enter an NCBI accession above and hit “Fetch”.</div></div>
     <aside>
       <h2>Features</h2><div id="featlist"></div>
       <h2>Primers</h2><div id="primerlist"></div>
-      <h2>Restriction sites</h2><div id="enzlist"></div>
+      <h2>Restriction sites</h2><div id="enzpick"></div><div id="enzlist"></div>
       <h2>Selection</h2><div id="detail">Click a feature on the map.</div>
     </aside>
   </div>
@@ -93,7 +135,49 @@ const TYPE_COLORS = { CDS:"#3aa0ff", promoter:"#ffb84d", terminator:"#c79bff", r
   primer_bind:"#7dff8a", protein_bind:"#ffd24a", misc_feature:"#8fa8cc", regulatory:"#ff7db8",
   misc_restriction:"#6a7ba0", source:"#445577" };
 
-const state = { dna:null, selected:-1 };
+// drawing palettes for canvas/SVG code (dark is the default; light keeps sync
+// with the html[data-theme="light"] CSS block). TYPE_COLORS are the per-feature
+// hues on dark; light uses darker variants so they read on a white background.
+const THEMES = {
+  dark: { features:TYPE_COLORS, laneLabel:"#0b0f17",
+    seqBg:"#0d1320", base:"#c9d6ea", baseLower:"#6a7f9f", dim:"#67799a", hi:"#e8f0ff",
+    txt:"#c9d6ea", grid:"#1a2436", backbone:"#2e4160", tick:"#3a5580",
+    featStroke:"#0b0f17", laneStroke:"#0d1320", sel:"#ffd24a",
+    enzLine:"#6a7ba0", enzText:"#8fa8cc", primerFwd:"#7dff8a", primerRev:"#ff7db8",
+    aa:"#67799a", aaComp:"#4f8f8a", aaBright:"#c9d6ea", stop:"#a4527e", stopBright:"#ff7db8",
+    selFill:"rgba(77,138,208,.25)", selEdge:"rgba(120,180,255,.8)", aaSelFill:"rgba(77,138,208,.18)",
+    barcode:"rgba(201,214,234,.5)", stopBar:"rgba(255,125,184,.55)", btnActive:"#2e4160" },
+  light: { features:{ CDS:"#1a79d1", promoter:"#b0730c", terminator:"#8554c9", rep_origin:"#0e86a8",
+      primer_bind:"#2f9e45", protein_bind:"#b8830a", misc_feature:"#5c78a5", regulatory:"#c2276b",
+      misc_restriction:"#54648c", source:"#33415e" }, laneLabel:"#ffffff",
+    seqBg:"#f7f9fc", base:"#1c2a40", baseLower:"#8a97ad", dim:"#5c6f8c", hi:"#0e2138",
+    txt:"#22334d", grid:"#dde4ef", backbone:"#b9c4d6", tick:"#8fa0bc",
+    featStroke:"#ffffff", laneStroke:"#f7f9fc", sel:"#c98a00",
+    enzLine:"#7488ad", enzText:"#42586f", primerFwd:"#2f9e45", primerRev:"#c2276b",
+    aa:"#5c6f8c", aaComp:"#3d7a75", aaBright:"#22334d", stop:"#8c4668", stopBright:"#c2276b",
+    selFill:"rgba(43,108,184,.18)", selEdge:"rgba(43,108,184,.7)", aaSelFill:"rgba(43,108,184,.14)",
+    barcode:"rgba(28,42,64,.35)", stopBar:"rgba(194,39,107,.4)", btnActive:"#cfdbea" },
+};
+let PAL = THEMES.dark;
+
+function readThemePref() { try { return localStorage.getItem("vv-theme"); } catch { return null; } }
+function writeThemePref(v) { try { localStorage.setItem("vv-theme", v); } catch {} }
+let themePref = readThemePref() === "light" || readThemePref() === "dark" ? readThemePref() : "auto";
+const darkMQ = matchMedia("(prefers-color-scheme: dark)");
+function effectiveTheme() { return themePref === "auto" ? (darkMQ.matches ? "dark" : "light") : themePref; }
+function applyTheme() {
+  PAL = THEMES[effectiveTheme()];
+  document.documentElement.dataset.theme = effectiveTheme();
+  document.querySelectorAll("#themeseg button").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.theme === themePref)));
+  if (state.dna) { render(state.dna); renderSeq(); }
+}
+document.querySelectorAll("#themeseg button").forEach((b) => {
+  b.addEventListener("click", () => { themePref = b.dataset.theme; writeThemePref(themePref); applyTheme(); });
+});
+darkMQ.addEventListener("change", () => { if (themePref === "auto") applyTheme(); });
+
+const state = { dna:null, selected:-1, hiddenEnzymes:new Set() };
 let mapGeom = null;
 const seqView = { dna:null, ppb:4, offset:0, sel:null, anchor:null, dragging:false, hitRects:[], translate:false };
 
@@ -104,6 +188,46 @@ function el(tag, attrs, parent) {
   return n;
 }
 const polar = (cx, cy, r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+
+// Leader path that kinks around blocking label bands: go radially, slide
+// tangentially around each blocker in the gap just before its text, then
+// slide back to the label's own angle in the gap just before its baseline.
+// dir = +1 for outward labels (radius grows toward the label), -1 inward.
+// blockers: [{c, hw, bandLo, bandHi}] — label center angle, angular half-width,
+// radial band [bandLo, bandHi] the label's glyphs occupy.
+function leaderPath(cx, cy, aStart, rStart, ownBaseR, dir, blockers) {
+  const sdist = (u, v) => { let d = u - v; d = ((d + Math.PI * 3) % (Math.PI * 2)) - Math.PI; return d; };
+  const pts = [polar(cx, cy, rStart, aStart)];
+  let a = aStart, r = rStart;
+  const done = new Set();
+  for (let g = 0; g < 40; g++) {
+    let nb = null, nbDist = Infinity;
+    blockers.forEach((b, bi) => {
+      if (done.has(bi)) return;
+      if (!(dir > 0 ? b.bandLo > r : b.bandHi < r)) return; // band not ahead on this path
+      if (Math.abs(sdist(a, b.c)) > b.hw) return; // leader angle clear of this label
+      const dist = dir > 0 ? b.bandLo - r : r - b.bandHi;
+      if (dist < nbDist) { nb = b; nbDist = dist; }
+    });
+    if (!nb) break;
+    const rSlide = dir > 0 ? nb.bandLo - 2 : nb.bandHi + 2; // gap channel before the band
+    pts.push(polar(cx, cy, rSlide, a));
+    const d0 = sdist(a, nb.c);
+    const edge = d0 > 0 ? nb.c + nb.hw + 0.04 : d0 < 0 ? nb.c - nb.hw - 0.04
+      : a + (g % 2 ? -1 : 1) * (nb.hw + 0.04);
+    for (const t of [1, 2]) pts.push(polar(cx, cy, rSlide, a + (edge - a) * (t / 2)));
+    a = edge; r = rSlide;
+    done.add(blockers.indexOf(nb));
+  }
+  const rChan = dir > 0 ? ownBaseR - 2 : ownBaseR + 6; // gap just before the label's baseline
+  if (Math.abs(sdist(a, aStart)) > 0.002) {
+    pts.push(polar(cx, cy, rChan, a));
+    for (const t of [1, 2]) pts.push(polar(cx, cy, rChan, a + (aStart - a) * (t / 2)));
+    a = aStart; r = rChan;
+  }
+  pts.push(polar(cx, cy, dir > 0 ? ownBaseR - 1 : ownBaseR + 5, a));
+  return "M" + pts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L");
+}
 
 function enzymeSites(seq, circular) {
   const sites = [];
@@ -239,18 +363,20 @@ function render(dna) {
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}` }, wrap);
   const defs = el("defs", {}, svg);
   const cx = W / 2, cy = H / 2;
-  const R = Math.max(120, Math.min(W, H) / 2 - 130);
+  // shrink the label gutter on small screens so the map stays big enough to read
+  const mapMargin = Math.min(130, Math.min(W, H) * 0.30);
+  const R = Math.max(90, Math.min(W, H) / 2 - mapMargin);
   const ang = (pos) => (pos / dna.length) * Math.PI * 2 - Math.PI / 2;
   mapGeom = { svg, cx, cy, R, ang };
 
   // selection arc from the sequence panel
-  el("path", { id: "selarc", fill: "none", stroke: "#ffd24a", "stroke-width": 4.5,
+  el("path", { id: "selarc", fill: "none", stroke: PAL.sel, "stroke-width": 4.5,
     "stroke-linecap": "round", opacity: 0.9, display: "none" }, svg);
-  el("text", { id: "selinfo", x: cx, y: cy + 30, "text-anchor": "middle", fill: "#ffd24a",
+  el("text", { id: "selinfo", x: cx, y: cy + 30, "text-anchor": "middle", fill: PAL.sel,
     "font-size": 10.5 }, svg);
 
   // backbone + ruler
-  el("circle", { cx, cy, r: R, fill: "none", stroke: "#2e4160", "stroke-width": 2 }, svg);
+  el("circle", { cx, cy, r: R, fill: "none", stroke: PAL.backbone, "stroke-width": 2 }, svg);
 
   // curved labels: angular arc per label, colliding ones stacked on outer levels
   const labelLevels = new Map();
@@ -284,7 +410,7 @@ function render(dna) {
     const [x1, y1] = polar(cx, cy, R - 5, ang(p));
     const [x2, y2] = polar(cx, cy, R + 5, ang(p));
     const [tx, ty] = polar(cx, cy, tickR, ang(p));
-    el("line", { x1, y1, x2, y2, stroke: "#3a5580", "stroke-width": 1.5 }, tickg);
+    el("line", { x1, y1, x2, y2, stroke: PAL.tick, "stroke-width": 1.5 }, tickg);
     const t = el("text", { x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "middle" }, tickg);
     t.textContent = p.toLocaleString();
   }
@@ -303,9 +429,9 @@ function render(dna) {
       else if (f.direction === 3)
         mode = (seg.start === fs && seg.end === fe) ? "bi" : seg.end === fe ? "fwd" : seg.start === fs ? "rev" : null;
       const g = el("g", { class: "feat" }, svg);
-      const color = seg.color || TYPE_COLORS[f.type] || "#8fa8cc";
+      const color = seg.color || PAL.features[f.type] || PAL.features.misc_feature;
       const d = featurePath(cx, cy, base - trackH, base, ang, seg.start, Math.min(seg.end, dna.length), mode);
-      const path = el("path", { d, fill: color, stroke: "#0b0f17", "stroke-width": 0.8, opacity: 0.92 }, g);
+      const path = el("path", { d, fill: color, stroke: PAL.featStroke, "stroke-width": 0.8, opacity: 0.92 }, g);
       path.dataset.featIdx = idx;
       if (f.segments.length > 1 && si === 0) path.setAttribute("opacity", 1);
       path.addEventListener("click", () => select(idx));
@@ -317,11 +443,20 @@ function render(dna) {
     if (lvl !== undefined) {
       const labelR = R + 6 + lvl * 13;
       const aMid = ang((s + e) / 2);
-      // leader: radial line from the feature ring's outer edge to the label arc
-      const [ld1x, ld1y] = polar(cx, cy, base, aMid);
-      const [ld2x, ld2y] = polar(cx, cy, labelR - 1, aMid);
-      el("line", { x1: ld1x.toFixed(1), y1: ld1y.toFixed(1), x2: ld2x.toFixed(1), y2: ld2y.toFixed(1),
-        stroke: "#3a5580", "stroke-width": 1 }, svg);
+      // leader: kinked line from the feature ring's outer edge to the label arc,
+      // sliding around any inner-level label whose text crosses the straight path
+      const blockers = [];
+      dna.features.forEach((f2, j) => {
+        if (j === idx) return;
+        const l2 = labelLevels.get(j);
+        if (l2 === undefined || l2 >= lvl) return;
+        const [s2, e2] = featureRange(f2);
+        const r2 = R + 6 + l2 * 13;
+        blockers.push({ c: ang((s2 + e2) / 2), hw: (f2.name.length * 6.3 / 2) / r2,
+          bandLo: r2, bandHi: r2 + 9 });
+      });
+      el("path", { d: leaderPath(cx, cy, aMid, base, labelR, 1, blockers),
+        fill: "none", stroke: PAL.tick, "stroke-width": 1 }, svg);
       const textHalf = (f.name.length * 6.3) / 2 + 3;
       const halfSpan = Math.max(((e - s) / 2 / dna.length) * Math.PI * 2, textHalf / labelR);
       // on the bottom half, sweep the arc the other way so text reads left-to-right
@@ -333,7 +468,7 @@ function render(dna) {
       const pid = `flabel${idx}`;
       el("path", { id: pid, fill: "none",
         d: `M${x0.toFixed(1)} ${y0.toFixed(1)} A${labelR.toFixed(1)} ${labelR.toFixed(1)} 0 ${large} ${sweep} ${x1.toFixed(1)} ${y1.toFixed(1)}` }, defs);
-      const t = el("text", { fill: "#c9d6ea", "font-size": 10.5, "font-weight": 600 }, svg);
+      const t = el("text", { fill: PAL.txt, "font-size": 10.5, "font-weight": 600 }, svg);
       const tp = el("textPath", { startOffset: "50%", "text-anchor": "middle" }, t);
       tp.setAttribute("href", `#${pid}`);
       tp.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", `#${pid}`);
@@ -348,35 +483,87 @@ function render(dna) {
     const [x, y] = polar(cx, cy, R - 46, a);
     const tri = el("polygon", {
       points: `0,-4 4,${p.strand === 1 ? 6 : -6} -4,${p.strand === 1 ? 6 : -6}`,
-      fill: p.strand === 1 ? "#7dff8a" : "#ff7db8",
+      fill: p.strand === 1 ? PAL.primerFwd : PAL.primerRev,
       transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(a * 180 / Math.PI + 90).toFixed(1)})`,
     }, svg);
     el("title", {}, tri).textContent = `primer ${p.name}`;
   }
 
-  // restriction sites (inner ticks)
-  const sites = enzymeSites(dna.sequence, dna.circular);
-  for (const s of sites) {
-    const a = ang(s.pos);
-    const [x1, y1] = polar(cx, cy, R - 96, a);
-    const [x2, y2] = polar(cx, cy, R - 86, a);
-    const l = el("line", { x1, y1, x2, y2, stroke: "#6a7ba0", "stroke-width": 1.4 }, svg);
-    el("title", {}, l).textContent = `${s.name} @ ${s.pos + 1}`;
+  // restriction sites, SnapGene-style: each name is placed on a concentric row
+  // and slid around the ring until it has its own slot, so names never overlap;
+  // one straight connector runs from the backbone tick to each label
+  const allSites = enzymeSites(dna.sequence, dna.circular);
+  const sites = allSites.filter((s) => !state.hiddenEnzymes.has(s.name));
+  {
+    const enzStep = 13;
+    const enzMin = Math.min(96, R * 0.55); // keep clear of the centered plasmid-name text
+    const enzTop = Math.max(enzMin + enzStep, R - 10 - nTracks * (trackH + trackGap) - 6);
+    const enzCap = Math.max(1, Math.floor((enzTop - enzMin) / enzStep) + 1);
+    const MAX_DRIFT = 0.55; // max angular slide from the site before using a deeper row
+    const angn = (v) => ((v % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const adist = (u, v) => { const d = Math.abs(angn(u) - angn(v)); return Math.min(d, Math.PI * 2 - d); };
+    const items = sites.map((s, si) => ({ si, a: ang(s.pos), name: s.name,
+      w: s.name.length * 5.4 + 6, level: enzCap, c: null }));
+    items.sort((x, y) => x.a - y.a);
+    const rows = [];
+    for (const it of items) {
+      for (let level = 0; level < enzCap; level++) {
+        const r = enzTop - enzStep * level;
+        const hw = it.w / 2 / r;
+        let c = it.a;
+        for (let g = 0; g < 80; g++) {
+          const hit = (rows[level] || []).find(([c2, h2]) => adist(c, c2) < hw + h2 + 0.006);
+          if (!hit) break;
+          c = hit[0] + hit[1] + hw + 0.008; // slide clockwise past the collision
+        }
+        if (adist(c, it.a) <= MAX_DRIFT) {
+          (rows[level] = rows[level] || []).push([c, hw]);
+          it.level = level; it.c = c;
+          break;
+        }
+      }
+    }
+    const bySi = new Map(items.map((it) => [it.si, it]));
+    sites.forEach((s, si) => {
+      const a = ang(s.pos);
+      const it = bySi.get(si);
+      const capped = !it || it.level >= enzCap || it.c == null;
+      const labR = enzTop - enzStep * (capped ? 0 : it.level);
+      const [x1, y1] = polar(cx, cy, R, a);
+      const [x2, y2] = capped ? polar(cx, cy, enzTop, a) : polar(cx, cy, labR + 9, it.c);
+      const l = el("line", { x1: x1.toFixed(1), y1: y1.toFixed(1), x2: x2.toFixed(1), y2: y2.toFixed(1),
+        stroke: PAL.enzLine, "stroke-width": 1 }, svg);
+      el("title", {}, l).textContent = `${s.name} @ ${s.pos + 1}`;
+      if (capped) return;
+      // centered name on a small arc at the row radius, flipped on the bottom half
+      const bottom = Math.sin(it.c) > 0;
+      const halfSpan = (it.w / 2 + 2) / labR;
+      const [ax0, ay0] = polar(cx, cy, labR, bottom ? it.c + halfSpan : it.c - halfSpan);
+      const [ax1, ay1] = polar(cx, cy, labR, bottom ? it.c - halfSpan : it.c + halfSpan);
+      const pid = `elabel${si}`;
+      el("path", { id: pid, fill: "none",
+        d: `M${ax0.toFixed(1)} ${ay0.toFixed(1)} A${labR.toFixed(1)} ${labR.toFixed(1)} 0 0 ${bottom ? 0 : 1} ${ax1.toFixed(1)} ${ay1.toFixed(1)}` }, defs);
+      const t = el("text", { fill: PAL.enzText, "font-size": 8.5, "font-weight": 600 }, svg);
+      const tp = el("textPath", { startOffset: "50%", "text-anchor": "middle" }, t);
+      tp.setAttribute("href", `#${pid}`);
+      tp.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", `#${pid}`);
+      tp.textContent = s.name;
+    });
   }
 
   // center info
-  const t1 = el("text", { x: cx, y: cy - 8, "text-anchor": "middle", fill: "#e8f0ff", "font-size": 15, "font-weight": 700 }, svg);
+  const t1 = el("text", { x: cx, y: cy - 8, "text-anchor": "middle", fill: PAL.hi, "font-size": 15, "font-weight": 700 }, svg);
   t1.textContent = name;
-  const t2 = el("text", { x: cx, y: cy + 12, "text-anchor": "middle", fill: "#67799a", "font-size": 11 }, svg);
+  const t2 = el("text", { x: cx, y: cy + 12, "text-anchor": "middle", fill: PAL.dim, "font-size": 11 }, svg);
   t2.textContent = `${dna.length.toLocaleString()} bp ${dna.circular ? "○" : "—"}`;
 
-  renderSidebar(dna, sites);
+  renderSidebar(dna, sites, allSites);
   if (state.selected >= 0 && state.selected < dna.features.length) markSelected();
   else document.getElementById("detail").textContent = "Click a feature on the map.";
   updateSelArc();
 }
 
-function renderSidebar(dna, sites) {
+function renderSidebar(dna, sites, allSites) {
   const fl = document.getElementById("featlist");
   fl.innerHTML = "";
   dna.features.forEach((f, i) => {
@@ -384,7 +571,7 @@ function renderSidebar(dna, sites) {
     const d = document.createElement("div");
     d.className = "row";
     d.dataset.i = i;
-    d.innerHTML = `<span class="sw" style="background:${f.segments[0]?.color || TYPE_COLORS[f.type] || "#8fa8cc"}"></span>
+    d.innerHTML = `<span class="sw" style="background:${f.segments[0]?.color || PAL.features[f.type] || PAL.features.misc_feature}"></span>
       <span>${esc(f.name)}</span><span class="pos">${f.type} ${s + 1}–${e}${f.direction ? (f.direction === 1 ? " →" : f.direction === 2 ? " ←" : " ↔") : ""}</span>`;
     d.addEventListener("click", () => select(i));
     fl.appendChild(d);
@@ -394,23 +581,83 @@ function renderSidebar(dna, sites) {
   for (const p of dna.primers) {
     const d = document.createElement("div");
     d.className = "row";
-    d.innerHTML = `<span class="sw" style="background:${p.strand === 1 ? "#7dff8a" : "#ff7db8"}"></span>
+    d.innerHTML = `<span class="sw" style="background:${p.strand === 1 ? PAL.primerFwd : PAL.primerRev}"></span>
       <span>${esc(p.name)}</span><span class="pos">${p.start != null ? p.start + 1 + "–" + p.end : "—"}</span>`;
     pl.appendChild(d);
   }
+  // enzyme picker: checkbox per enzyme with cut count, plus All / None
+  const elp = document.getElementById("enzpick");
+  elp.innerHTML = "";
+  const bar = document.createElement("div");
+  bar.className = "enzbar";
+  const bAll = document.createElement("button");
+  bAll.textContent = "All";
+  bAll.addEventListener("click", () => { state.hiddenEnzymes.clear(); render(state.dna); });
+  const bNone = document.createElement("button");
+  bNone.textContent = "None";
+  bNone.addEventListener("click", () => { state.hiddenEnzymes = new Set(Object.keys(ENZYMES)); render(state.dna); });
+  bar.append(bAll, bNone);
+  const grid = document.createElement("div");
+  grid.className = "enzgrid";
+  const counts = new Map();
+  for (const s of allSites) counts.set(s.name, (counts.get(s.name) || 0) + 1);
+  for (const name of Object.keys(ENZYMES).sort()) {
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !state.hiddenEnzymes.has(name);
+    cb.addEventListener("change", () => {
+      if (cb.checked) state.hiddenEnzymes.delete(name);
+      else state.hiddenEnzymes.add(name);
+      render(state.dna);
+    });
+    lab.appendChild(cb);
+    const nm = document.createElement("span");
+    nm.textContent = name;
+    const cnt = document.createElement("span");
+    cnt.className = "cnt";
+    cnt.textContent = counts.get(name) || 0;
+    lab.append(nm, cnt);
+    grid.appendChild(lab);
+  }
+  elp.append(bar, grid);
+
   const el2 = document.getElementById("enzlist");
   el2.innerHTML = "";
   for (const s of sites) {
     const d = document.createElement("div");
     d.className = "row";
-    d.innerHTML = `<span class="sw" style="background:#6a7ba0"></span><span>${s.name}</span><span class="pos">${s.pos + 1}</span>`;
+    d.dataset.enz = s.name;
+    d.dataset.pos = s.pos;
+    d.innerHTML = `<span class="sw" style="background:${PAL.enzLine}"></span><span>${esc(s.name)}</span><span class="pos">${s.pos + 1}</span>`;
+    d.addEventListener("click", () => selectEnzSite(s, d));
     el2.appendChild(d);
   }
+}
+
+function selectEnzSite(s, row) {
+  state.selected = -1;
+  markSelected();
+  closeDrawer();
+  if (row) row.classList.add("sel");
+  const motif = ENZYMES[s.name] || "";
+  const b = Math.min(state.dna.length, s.pos + motif.length);
+  if (seqView.dna === state.dna) {
+    seqView.sel = { a: s.pos, b };
+    const { w } = seqMetrics();
+    seqView.offset = s.pos + motif.length / 2 - (w / seqView.ppb) / 2;
+    clampOffset();
+    renderSeq();
+    updateSelArc();
+  }
+  document.getElementById("detail").innerHTML =
+    `<b>${esc(s.name)}</b>  restriction site\nsite: ${s.pos + 1}–${b}\nmotif: ${esc(motif)}`;
 }
 
 function select(i) {
   state.selected = i;
   markSelected();
+  closeDrawer();
   const f = state.dna.features[i];
   if (seqView.dna === state.dna && f.segments.length) {
     const { w } = seqMetrics();
@@ -434,6 +681,7 @@ function markSelected() {
     p.classList.toggle("sel", +p.dataset.featIdx === state.selected));
   document.querySelectorAll("#featlist .row").forEach((r) =>
     r.classList.toggle("sel", +r.dataset.i === state.selected));
+  document.querySelectorAll("#enzlist .row.sel").forEach((r) => r.classList.remove("sel"));
 }
 
 // ---------------- sequence panel ----------------
@@ -478,7 +726,7 @@ function renderSeq() {
   if (cv.height !== Math.round(h * dpr)) cv.height = Math.round(h * dpr);
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = "#0d1320"; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = PAL.seqBg; ctx.fillRect(0, 0, w, h);
   clampOffset();
   const { ppb, offset } = seqView;
   const xOf = (b) => (b - offset) * ppb;
@@ -488,9 +736,9 @@ function renderSeq() {
   // selection highlight (behind everything else)
   if (seqView.sel) {
     const { a, b } = seqView.sel;
-    ctx.fillStyle = "rgba(77,138,208,.25)";
+    ctx.fillStyle = PAL.selFill;
     ctx.fillRect(xOf(a), 0, (b - a) * ppb + 1, h);
-    ctx.strokeStyle = "rgba(120,180,255,.8)";
+    ctx.strokeStyle = PAL.selEdge;
     ctx.beginPath();
     ctx.moveTo(xOf(a) + .5, 0); ctx.lineTo(xOf(a) + .5, h);
     ctx.moveTo(xOf(b) + .5, 0); ctx.lineTo(xOf(b) + .5, h);
@@ -499,17 +747,17 @@ function renderSeq() {
 
   // ruler
   const step = niceStep(60);
-  ctx.fillStyle = "#67799a"; ctx.font = "9px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = PAL.dim; ctx.font = "9px system-ui"; ctx.textAlign = "left";
   for (let b = Math.ceil(start / step) * step; b < end; b += step) {
     const x = xOf(b);
     ctx.fillRect(x, RULER_H - 6, 1, 6);
     ctx.fillText(b.toLocaleString(), x + 2, RULER_H - 6);
     if (ppb * 10 > 9 && step <= 10) {
-      ctx.fillStyle = "#1a2436";
+      ctx.fillStyle = PAL.grid;
       for (let k = b + 1; k < Math.min(b + step, end); k++) {
         if (k % 10 === 0 && k % step !== 0) ctx.fillRect(xOf(k), seqY - 4, 1, 4);
       }
-      ctx.fillStyle = "#67799a";
+      ctx.fillStyle = PAL.dim;
     }
   }
   ctx.fillRect(0, RULER_H - 1, w, 1);
@@ -517,7 +765,7 @@ function renderSeq() {
   // feature lanes
   seqView.hitRects = [];
   for (const f of dna.features) {
-    const color = (f.segments[0] && f.segments[0].color) || TYPE_COLORS[f.type] || "#8fa8cc";
+    const color = (f.segments[0] && f.segments[0].color) || PAL.features[f.type] || PAL.features.misc_feature;
     const y = RULER_H + 2 + f.track * LANE_H;
     for (const seg of f.segments) {
       const x0 = xOf(seg.start), x1 = xOf(seg.end);
@@ -527,9 +775,9 @@ function renderSeq() {
       ctx.fillStyle = color;
       ctx.fillRect(x0, y, wpx, LANE_H - 4);
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = "#0d1320"; ctx.strokeRect(x0 + .5, y + .5, wpx - 1, LANE_H - 5);
+      ctx.strokeStyle = PAL.laneStroke; ctx.strokeRect(x0 + .5, y + .5, wpx - 1, LANE_H - 5);
       if (wpx > 45) {
-        ctx.fillStyle = "#0b0f17"; ctx.font = "bold 8.5px system-ui";
+        ctx.fillStyle = PAL.laneLabel; ctx.font = "bold 8.5px system-ui";
         ctx.save(); ctx.beginPath(); ctx.rect(x0, y, wpx, LANE_H); ctx.clip();
         ctx.fillText(f.name, x0 + 3, y + LANE_H - 6);
         ctx.restore();
@@ -545,11 +793,11 @@ function renderSeq() {
     ctx.textBaseline = "alphabetic";
     for (let i = start; i < end; i++) {
       const ch = dna.sequence[i];
-      ctx.fillStyle = ch === ch.toLowerCase() && /[acgtn]/.test(ch) ? "#6a7f9f" : "#c9d6ea";
+      ctx.fillStyle = ch === ch.toLowerCase() && /[acgtn]/.test(ch) ? PAL.baseLower : PAL.base;
       ctx.fillText(ch, xOf(i) + (ppb - Math.min(ppb, 6.6)) / 2, sy);
     }
   } else {
-    ctx.strokeStyle = "rgba(201,214,234,.5)";
+    ctx.strokeStyle = PAL.barcode;
     ctx.beginPath();
     for (let i = start; i < end; i++) {
       const x = xOf(i);
@@ -568,16 +816,16 @@ function renderSeq() {
       const inSel = sel && b >= sel.a && b + 3 <= sel.b && (b - sel.a) % 3 === 0;
       const x = xOf(b);
       if (inSel) {
-        ctx.fillStyle = "rgba(77,138,208,.18)";
+        ctx.fillStyle = PAL.aaSelFill;
         ctx.fillRect(x, protTop, 3 * ppb, protLaneH - 1);
       }
       ctx.font = "9px ui-monospace, Menlo, monospace";
       if (ppb * 3 >= 7.5) {
-        if (aa === "*") { ctx.fillStyle = inSel ? "#ff7db8" : "#a4527e"; ctx.font = "bold 9px ui-monospace, Menlo, monospace"; }
-        else ctx.fillStyle = inSel ? "#c9d6ea" : (comp ? "#4f8f8a" : "#67799a");
+        if (aa === "*") { ctx.fillStyle = inSel ? PAL.stopBright : PAL.stop; ctx.font = "bold 9px ui-monospace, Menlo, monospace"; }
+        else ctx.fillStyle = inSel ? PAL.aaBright : (comp ? PAL.aaComp : PAL.aa);
         ctx.fillText(aa, x + (3 * ppb - 5.4) / 2, ly);
       } else if (aa === "*") {
-        ctx.fillStyle = "rgba(255,125,184,.55)";
+        ctx.fillStyle = PAL.stopBar;
         ctx.fillRect(x, ly - 5, 1.5, 5);
       }
     };
@@ -695,7 +943,7 @@ function wireSeqPanel() {
   document.getElementById("transbtn").addEventListener("click", () => {
     seqView.translate = !seqView.translate;
     document.getElementById("seqpanel").classList.toggle("translate-on", seqView.translate);
-    document.getElementById("transbtn").style.background = seqView.translate ? "#2e4160" : "";
+    document.getElementById("transbtn").style.background = seqView.translate ? PAL.btnActive : "";
     renderSeq();
   });
 }
@@ -790,6 +1038,18 @@ wrap.addEventListener("drop", (e) => {
 const qn = new URLSearchParams(location.search).get("ncbi");
 if (qn) document.getElementById("ncbi").value = qn;
 window.addEventListener("resize", () => { if (state.dna) { render(state.dna); renderSeq(); } });
+
+// mobile sidebar drawer
+const asideEl = document.querySelector("aside");
+const scrimEl = document.getElementById("scrim");
+function closeDrawer() { asideEl.classList.remove("open"); scrimEl.classList.remove("show"); }
+document.getElementById("panelbtn").addEventListener("click", () => {
+  const open = asideEl.classList.toggle("open");
+  scrimEl.classList.toggle("show", open);
+});
+scrimEl.addEventListener("click", closeDrawer);
+
+applyTheme();
 </script>
 </body>
 </html>
