@@ -409,73 +409,65 @@ function render(dna) {
     el("title", {}, tri).textContent = `primer ${p.name}`;
   }
 
-  // restriction sites: connector lines into the inner disc, names staggered on depth levels
+  // restriction sites, SnapGene-style: each name is placed on a concentric row
+  // and slid around the ring until it has its own slot, so names never overlap;
+  // one straight connector runs from the backbone tick to each label
   const allSites = enzymeSites(dna.sequence, dna.circular);
   const sites = allSites.filter((s) => !state.hiddenEnzymes.has(s.name));
   {
     const enzTop = R - 10 - nTracks * (trackH + trackGap) - 6; // below the innermost feature ring
-    const enzStep = 12;
+    const enzStep = 13;
     const enzMin = 96; // keep clear of the centered plasmid-name text
     const enzCap = Math.max(1, Math.floor((enzTop - enzMin) / enzStep) + 1);
+    const MAX_DRIFT = 0.55; // max angular slide from the site before using a deeper row
     const angn = (v) => ((v % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     const adist = (u, v) => { const d = Math.abs(angn(u) - angn(v)); return Math.min(d, Math.PI * 2 - d); };
-    const items = sites.map((s, si) => {
-      const a = ang(s.pos);
-      const flip = ((a * 180 / Math.PI + 90 + 360) % 360) > 90 && ((a * 180 / Math.PI + 90 + 360) % 360) < 270;
-      return { si, a, flip, w: s.name.length * 5.6 + 5 };
-    });
-    items.sort((x, y) => y.w - x.w || x.a - y.a);
-    const taken = [];
-    // place each label's tangential arc at the shallowest depth level with room;
-    // the arc's angular half-width depends on that level's radius (smaller r ⇒ wider)
-    const arcOf = (it, level) => {
-      const r = enzTop - enzStep * level;
-      const c = it.a + (it.flip ? -1 : 1) * (it.w / 2) / r;
-      return [c, (it.w / 2 + 3) / r];
-    };
+    const items = sites.map((s, si) => ({ si, a: ang(s.pos), name: s.name,
+      w: s.name.length * 5.4 + 6, level: enzCap, c: null }));
+    items.sort((x, y) => x.a - y.a);
+    const rows = [];
     for (const it of items) {
-      let level = 0;
-      while (level < enzCap) {
-        const [c, hw] = arcOf(it, level);
-        if (!(taken[level] || []).some(([c2, hw2]) => adist(c, c2) < hw + hw2 - 0.01)) break;
-        level++;
+      for (let level = 0; level < enzCap; level++) {
+        const r = enzTop - enzStep * level;
+        const hw = it.w / 2 / r;
+        let c = it.a;
+        for (let g = 0; g < 80; g++) {
+          const hit = (rows[level] || []).find(([c2, h2]) => adist(c, c2) < hw + h2 + 0.006);
+          if (!hit) break;
+          c = hit[0] + hit[1] + hw + 0.008; // slide clockwise past the collision
+        }
+        if (adist(c, it.a) <= MAX_DRIFT) {
+          (rows[level] = rows[level] || []).push([c, hw]);
+          it.level = level; it.c = c;
+          break;
+        }
       }
-      if (level < enzCap) taken[level] = (taken[level] || []).concat([arcOf(it, level)]);
-      it.level = level; // == enzCap → no room, line only
     }
     const bySi = new Map(items.map((it) => [it.si, it]));
     sites.forEach((s, si) => {
       const a = ang(s.pos);
-      const lvl = bySi.get(si);
-      const capped = !lvl || lvl.level >= enzCap;
-      const labR = enzTop - enzStep * (capped ? 0 : lvl.level);
-      let d;
-      if (capped) {
-        const [x1, y1] = polar(cx, cy, R, a);
-        const [x2, y2] = polar(cx, cy, enzTop, a);
-        d = `M${x1.toFixed(1)} ${y1.toFixed(1)} L${x2.toFixed(1)} ${y2.toFixed(1)}`;
-      } else {
-        // any shallower-depth enzyme label whose text band the straight line
-        // would strike through becomes a blocker the leader kinks around
-        const blockers = [];
-        for (const it of items) {
-          if (it === lvl || it.level >= enzCap || it.level >= lvl.level) continue;
-          const [c, hw] = arcOf(it, it.level);
-          const r2 = enzTop - enzStep * it.level;
-          blockers.push({ c, hw, bandLo: r2 - 5, bandHi: r2 + 5 });
-        }
-        d = leaderPath(cx, cy, a, R, labR, -1, blockers);
-      }
-      const l = el("path", { d, fill: "none", stroke: "#6a7ba0", "stroke-width": 1 }, svg);
+      const it = bySi.get(si);
+      const capped = !it || it.level >= enzCap || it.c == null;
+      const labR = enzTop - enzStep * (capped ? 0 : it.level);
+      const [x1, y1] = polar(cx, cy, R, a);
+      const [x2, y2] = capped ? polar(cx, cy, enzTop, a) : polar(cx, cy, labR + 9, it.c);
+      const l = el("line", { x1: x1.toFixed(1), y1: y1.toFixed(1), x2: x2.toFixed(1), y2: y2.toFixed(1),
+        stroke: "#6a7ba0", "stroke-width": 1 }, svg);
       el("title", {}, l).textContent = `${s.name} @ ${s.pos + 1}`;
       if (capped) return;
-      const deg = a * 180 / Math.PI;
-      const [lx, ly] = polar(cx, cy, labR, a);
-      const t = el("text", { x: lx.toFixed(1), y: ly.toFixed(1), fill: "#8fa8cc", "font-size": 8.5,
-        "font-weight": 600, "dominant-baseline": "middle",
-        "text-anchor": lvl.flip ? "end" : "start",
-        transform: `rotate(${(deg + 90).toFixed(2)},${lx.toFixed(1)},${ly.toFixed(1)})` }, svg);
-      t.textContent = s.name;
+      // centered name on a small arc at the row radius, flipped on the bottom half
+      const bottom = Math.sin(it.c) > 0;
+      const halfSpan = (it.w / 2 + 2) / labR;
+      const [ax0, ay0] = polar(cx, cy, labR, bottom ? it.c + halfSpan : it.c - halfSpan);
+      const [ax1, ay1] = polar(cx, cy, labR, bottom ? it.c - halfSpan : it.c + halfSpan);
+      const pid = `elabel${si}`;
+      el("path", { id: pid, fill: "none",
+        d: `M${ax0.toFixed(1)} ${ay0.toFixed(1)} A${labR.toFixed(1)} ${labR.toFixed(1)} 0 0 ${bottom ? 0 : 1} ${ax1.toFixed(1)} ${ay1.toFixed(1)}` }, defs);
+      const t = el("text", { fill: "#8fa8cc", "font-size": 8.5, "font-weight": 600 }, svg);
+      const tp = el("textPath", { startOffset: "50%", "text-anchor": "middle" }, t);
+      tp.setAttribute("href", `#${pid}`);
+      tp.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", `#${pid}`);
+      tp.textContent = s.name;
     });
   }
 
