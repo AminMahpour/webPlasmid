@@ -111,6 +111,46 @@ function el(tag, attrs, parent) {
 }
 const polar = (cx, cy, r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
 
+// Leader path that kinks around blocking label bands: go radially, slide
+// tangentially around each blocker in the gap just before its text, then
+// slide back to the label's own angle in the gap just before its baseline.
+// dir = +1 for outward labels (radius grows toward the label), -1 inward.
+// blockers: [{c, hw, bandLo, bandHi}] — label center angle, angular half-width,
+// radial band [bandLo, bandHi] the label's glyphs occupy.
+function leaderPath(cx, cy, aStart, rStart, ownBaseR, dir, blockers) {
+  const sdist = (u, v) => { let d = u - v; d = ((d + Math.PI * 3) % (Math.PI * 2)) - Math.PI; return d; };
+  const pts = [polar(cx, cy, rStart, aStart)];
+  let a = aStart, r = rStart;
+  const done = new Set();
+  for (let g = 0; g < 40; g++) {
+    let nb = null, nbDist = Infinity;
+    blockers.forEach((b, bi) => {
+      if (done.has(bi)) return;
+      if (!(dir > 0 ? b.bandLo > r : b.bandHi < r)) return; // band not ahead on this path
+      if (Math.abs(sdist(a, b.c)) > b.hw) return; // leader angle clear of this label
+      const dist = dir > 0 ? b.bandLo - r : r - b.bandHi;
+      if (dist < nbDist) { nb = b; nbDist = dist; }
+    });
+    if (!nb) break;
+    const rSlide = dir > 0 ? nb.bandLo - 2 : nb.bandHi + 2; // gap channel before the band
+    pts.push(polar(cx, cy, rSlide, a));
+    const d0 = sdist(a, nb.c);
+    const edge = d0 > 0 ? nb.c + nb.hw + 0.04 : d0 < 0 ? nb.c - nb.hw - 0.04
+      : a + (g % 2 ? -1 : 1) * (nb.hw + 0.04);
+    for (const t of [1, 2]) pts.push(polar(cx, cy, rSlide, a + (edge - a) * (t / 2)));
+    a = edge; r = rSlide;
+    done.add(blockers.indexOf(nb));
+  }
+  const rChan = dir > 0 ? ownBaseR - 2 : ownBaseR + 6; // gap just before the label's baseline
+  if (Math.abs(sdist(a, aStart)) > 0.002) {
+    pts.push(polar(cx, cy, rChan, a));
+    for (const t of [1, 2]) pts.push(polar(cx, cy, rChan, a + (aStart - a) * (t / 2)));
+    a = aStart; r = rChan;
+  }
+  pts.push(polar(cx, cy, dir > 0 ? ownBaseR - 1 : ownBaseR + 5, a));
+  return "M" + pts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L");
+}
+
 function enzymeSites(seq, circular) {
   const sites = [];
   const hay = seq.toUpperCase();
@@ -323,11 +363,20 @@ function render(dna) {
     if (lvl !== undefined) {
       const labelR = R + 6 + lvl * 13;
       const aMid = ang((s + e) / 2);
-      // leader: radial line from the feature ring's outer edge to the label arc
-      const [ld1x, ld1y] = polar(cx, cy, base, aMid);
-      const [ld2x, ld2y] = polar(cx, cy, labelR - 1, aMid);
-      el("line", { x1: ld1x.toFixed(1), y1: ld1y.toFixed(1), x2: ld2x.toFixed(1), y2: ld2y.toFixed(1),
-        stroke: "#3a5580", "stroke-width": 1 }, svg);
+      // leader: kinked line from the feature ring's outer edge to the label arc,
+      // sliding around any inner-level label whose text crosses the straight path
+      const blockers = [];
+      dna.features.forEach((f2, j) => {
+        if (j === idx) return;
+        const l2 = labelLevels.get(j);
+        if (l2 === undefined || l2 >= lvl) return;
+        const [s2, e2] = featureRange(f2);
+        const r2 = R + 6 + l2 * 13;
+        blockers.push({ c: ang((s2 + e2) / 2), hw: (f2.name.length * 6.3 / 2) / r2,
+          bandLo: r2, bandHi: r2 + 9 });
+      });
+      el("path", { d: leaderPath(cx, cy, aMid, base, labelR, 1, blockers),
+        fill: "none", stroke: "#3a5580", "stroke-width": 1 }, svg);
       const textHalf = (f.name.length * 6.3) / 2 + 3;
       const halfSpan = Math.max(((e - s) / 2 / dna.length) * Math.PI * 2, textHalf / labelR);
       // on the bottom half, sweep the arc the other way so text reads left-to-right
@@ -400,10 +449,24 @@ function render(dna) {
       const lvl = bySi.get(si);
       const capped = !lvl || lvl.level >= enzCap;
       const labR = enzTop - enzStep * (capped ? 0 : lvl.level);
-      const [x1, y1] = polar(cx, cy, R, a);
-      const [x2, y2] = polar(cx, cy, labR, a);
-      const l = el("line", { x1: x1.toFixed(1), y1: y1.toFixed(1), x2: x2.toFixed(1), y2: y2.toFixed(1),
-        stroke: "#6a7ba0", "stroke-width": 1 }, svg);
+      let d;
+      if (capped) {
+        const [x1, y1] = polar(cx, cy, R, a);
+        const [x2, y2] = polar(cx, cy, enzTop, a);
+        d = `M${x1.toFixed(1)} ${y1.toFixed(1)} L${x2.toFixed(1)} ${y2.toFixed(1)}`;
+      } else {
+        // any shallower-depth enzyme label whose text band the straight line
+        // would strike through becomes a blocker the leader kinks around
+        const blockers = [];
+        for (const it of items) {
+          if (it === lvl || it.level >= enzCap || it.level >= lvl.level) continue;
+          const [c, hw] = arcOf(it, it.level);
+          const r2 = enzTop - enzStep * it.level;
+          blockers.push({ c, hw, bandLo: r2 - 5, bandHi: r2 + 5 });
+        }
+        d = leaderPath(cx, cy, a, R, labR, -1, blockers);
+      }
+      const l = el("path", { d, fill: "none", stroke: "#6a7ba0", "stroke-width": 1 }, svg);
       el("title", {}, l).textContent = `${s.name} @ ${s.pos + 1}`;
       if (capped) return;
       const deg = a * 180 / Math.PI;
