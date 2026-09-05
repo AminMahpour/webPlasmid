@@ -28,7 +28,7 @@
   #ncbi::placeholder { color:var(--dim) }
   select#reclist { background:var(--btn); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:5px 8px; font:13px inherit }
   main { flex:1; display:flex; flex-direction:column; min-height:0 }
-  .toprow { flex:1; display:flex; min-height:0 }
+  .toprow { flex:1; display:flex; min-height:0; position:relative }
   #seqpanel { height:236px; border-top:1px solid var(--line); background:var(--seqbg); display:flex; flex-direction:column; flex:none }
   #seqpanel.translate-on { height:294px }
   #seqcv { flex:1; min-height:0; width:100%; display:block; cursor:text }
@@ -59,6 +59,41 @@
   .row.sel { background:var(--btnHover); outline:1px solid var(--accent) }
   .empty { color:var(--dim); padding:40px; text-align:center }
   .tick text { font-size:9px; fill:var(--dim) }
+  /* find bar: floats over the map so it costs no layout */
+  #findbar { position:absolute; top:8px; left:8px; z-index:6; display:flex; align-items:center; gap:5px;
+    background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:5px 6px;
+    box-shadow:0 4px 16px rgba(0,0,0,.4) }
+  #findbar[hidden] { display:none }
+  #findq { flex:1; min-width:110px; background:var(--field); color:var(--txt); border:1px solid var(--line);
+    border-radius:4px; padding:4px 8px; font:13px inherit }
+  #findq::placeholder { color:var(--dim) }
+  #findmode { background:var(--btn); color:var(--txt); border:1px solid var(--line); border-radius:4px;
+    padding:3px 5px; font:12px inherit }
+  #findbar button { padding:3px 8px; font-size:12px }
+  #findcount { font:11px inherit; color:var(--dim); white-space:nowrap; min-width:58px; text-align:right }
+  /* digest dialog */
+  .modal { position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
+    padding:10px; background:rgba(5,8,14,.6) }
+  .modal[hidden] { display:none }
+  .dlg { background:var(--panel); border:1px solid var(--line); border-radius:8px; width:min(740px,96vw);
+    max-height:88vh; display:flex; flex-direction:column; box-shadow:0 12px 40px rgba(0,0,0,.5) }
+  .dlghead { display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid var(--line) }
+  .dlghead h2 { font-size:13px; color:var(--hi) }
+  .dlghead .sub { font-size:11px; color:var(--dim) }
+  .dlghead .spacer { flex:1 }
+  .dlghead button { padding:3px 9px; font-size:12px }
+  .dlgbody { display:flex; gap:12px; padding:10px 12px; min-height:0 }
+  #gelcv { width:190px; flex:none; height:320px }
+  #digestab { flex:1; min-width:0; overflow:auto; border-collapse:collapse; font-size:12px }
+  #digestab th { text-align:left; color:var(--dim); font-size:10px; letter-spacing:1px; text-transform:uppercase;
+    position:sticky; top:0; background:var(--panel); padding:4px 6px; border-bottom:1px solid var(--line) }
+  #digestab td { padding:4px 6px; border-bottom:1px solid var(--line); white-space:nowrap }
+  #digestab tbody tr { cursor:pointer }
+  #digestab tbody tr:hover { background:var(--btn) }
+  #digestab tbody tr.sel { background:var(--btnHover); outline:1px solid var(--accent) }
+  #digestab .num { text-align:right; font-variant-numeric:tabular-nums }
+  #digestab .end { color:var(--dim) }
+  .dlgfoot { padding:7px 12px; border-top:1px solid var(--line); font-size:11px; color:var(--dim) }
   #seqcv { touch-action:none }
   #panelbtn { display:none }
   #scrim { display:none }
@@ -76,6 +111,11 @@
     #seqtools { flex-wrap:wrap }
     #seqpanel { height:190px }
     #seqpanel.translate-on { height:244px }
+    #findbar { left:8px; right:8px; flex-wrap:wrap }
+    .dlg { width:96vw; max-height:92vh }
+    .dlgbody { flex-direction:column; overflow:auto }
+    #gelcv { width:100%; height:200px }
+    #digestab { max-height:38vh }
   }
 </style>
 </head>
@@ -92,13 +132,27 @@
   <input id="ncbi" placeholder="NCBI accession(s), e.g. X83542" spellcheck="false">
   <button id="fetchbtn" title="Fetch from NCBI">Fetch</button>
   <select id="reclist" hidden></select>
+  <button id="findbtn" title="Find motif, protein or position (Ctrl/⌘-F)" aria-expanded="false"
+    aria-controls="findbar" disabled>Find</button>
   <label class="btn">Open file<input type="file" id="file" accept=".dna,.gb,.gbk,.genbank" hidden></label>
   <button id="panelbtn" title="Show features, primers and sites">☰ Panel</button>
 </header>
 <div id="scrim"></div>
 <main>
   <div class="toprow">
-    <div id="mapwrap"><div class="empty">Drop a SnapGene <b>.dna</b> or GenBank <b>.gb</b> file here, click “Open file”,<br>or enter an NCBI accession above and hit “Fetch”.</div></div>
+    <div id="findbar" hidden>
+      <input id="findq" aria-label="Find in sequence" placeholder="motif (GAATTC), protein (MALD…), 4000 or 1200–1600" spellcheck="false" autocomplete="off">
+      <select id="findmode" title="Search mode">
+        <option value="dna">DNA ±</option>
+        <option value="protein">Protein</option>
+        <option value="regex">Regex</option>
+      </select>
+      <span id="findcount" role="status" aria-live="polite"></span>
+      <button id="findprev" title="Previous match (Shift-Enter)">&#9650;</button>
+      <button id="findnext" title="Next match (Enter)">&#9660;</button>
+      <button id="findclose" title="Close (Esc)">&#10005;</button>
+    </div>
+  <div id="mapwrap"><div class="empty">Drop a SnapGene <b>.dna</b> or GenBank <b>.gb</b> file here, click “Open file”,<br>or enter an NCBI accession above and hit “Fetch”.</div></div>
     <aside>
       <h2>Features</h2><div id="featlist"></div>
       <h2>Primers</h2><div id="primerlist"></div>
@@ -118,6 +172,26 @@
     </div>
   </div>
 </main>
+<div id="digest" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="digtitle">
+  <div class="dlg">
+    <div class="dlghead">
+      <h2 id="digtitle">Digest</h2>
+      <span class="sub" id="digsub"></span>
+      <span class="spacer"></span>
+      <button id="digsrt" title="Toggle fragment sort order">sort: size</button>
+      <button id="digcopy" title="Copy the fragment table">copy</button>
+      <button id="digclose" title="Close (Esc)">&#10005;</button>
+    </div>
+    <div class="dlgbody">
+      <canvas id="gelcv" aria-label="Simulated agarose gel"></canvas>
+      <table id="digestab">
+        <thead><tr><th>#</th><th class="num">bp</th><th>region</th><th class="end">cut by</th></tr></thead>
+        <tbody id="digestbody"></tbody>
+      </table>
+    </div>
+    <div class="dlgfoot" id="digfoot"></div>
+  </div>
+</div>
 <script src="snapgene_parse.js"></script>
 <script src="genbank_parse.js"></script>
 <script>
@@ -146,7 +220,8 @@ const THEMES = {
     enzLine:"#6a7ba0", enzText:"#8fa8cc", primerFwd:"#7dff8a", primerRev:"#ff7db8",
     aa:"#67799a", aaComp:"#4f8f8a", aaBright:"#c9d6ea", stop:"#a4527e", stopBright:"#ff7db8",
     selFill:"rgba(77,138,208,.25)", selEdge:"rgba(120,180,255,.8)", aaSelFill:"rgba(77,138,208,.18)",
-    barcode:"rgba(201,214,234,.5)", stopBar:"rgba(255,125,184,.55)", btnActive:"#2e4160" },
+    barcode:"rgba(201,214,234,.5)", stopBar:"rgba(255,125,184,.55)", btnActive:"#2e4160",
+    find:"#ff9d4d", findFill:"rgba(255,157,77,.30)", gelBg:"#060a12", gelBand:"#8fe0ff", gelWell:"#1a2436" },
   light: { features:{ CDS:"#1a79d1", promoter:"#b0730c", terminator:"#8554c9", rep_origin:"#0e86a8",
       primer_bind:"#2f9e45", protein_bind:"#b8830a", misc_feature:"#5c78a5", regulatory:"#c2276b",
       misc_restriction:"#54648c", source:"#33415e" }, laneLabel:"#ffffff",
@@ -156,7 +231,8 @@ const THEMES = {
     enzLine:"#7488ad", enzText:"#42586f", primerFwd:"#2f9e45", primerRev:"#c2276b",
     aa:"#5c6f8c", aaComp:"#3d7a75", aaBright:"#22334d", stop:"#8c4668", stopBright:"#c2276b",
     selFill:"rgba(43,108,184,.18)", selEdge:"rgba(43,108,184,.7)", aaSelFill:"rgba(43,108,184,.14)",
-    barcode:"rgba(28,42,64,.35)", stopBar:"rgba(194,39,107,.4)", btnActive:"#cfdbea" },
+    barcode:"rgba(28,42,64,.35)", stopBar:"rgba(194,39,107,.4)", btnActive:"#cfdbea",
+    find:"#c2410c", findFill:"rgba(194,65,12,.22)", gelBg:"#e6ecf6", gelBand:"#1a5aa0", gelWell:"#c3cfdf" },
 };
 let PAL = THEMES.dark;
 
@@ -244,6 +320,252 @@ function enzymeSites(seq, circular) {
   sites.sort((a, b) => a.pos - b.pos);
   return sites;
 }
+
+// ---------------- restriction digest ----------------
+// Top-strand cut offset (nt after the motif start) for the built-in enzymes.
+// Anything missing falls back to the motif midpoint.
+const ENZYME_CUT = {
+  EcoRI:1, BamHI:1, HindIII:1, XhoI:1, NotI:2, SalI:1, PstI:5, EcoRV:3, SmaI:3, KpnI:5,
+  SacI:5, SpeI:1, NcoI:2, NheI:1, XbaI:1, BglII:1, ClaI:1, Acc65I:1, AflII:1,
+};
+function cutOffset(name, motif) {
+  const c = ENZYME_CUT[name];
+  return c == null ? Math.floor(motif.length / 2) : Math.min(motif.length, c);
+}
+// Palindromic motifs cut symmetrically — top strand after `c`, bottom strand after
+// motif.length - c — so a bottom cut further right leaves a 5' overhang.
+function cutInfo(name) {
+  const motif = (ENZYMES[name] || "").toUpperCase();
+  const m = motif.length, c = cutOffset(name, motif), far = m - c;
+  if (!m) return { cut:0, kind:"?", seq:"", over:0 };
+  if (far === c) return { cut:c, kind:"blunt", seq:"", over:0 };
+  return far > c
+    ? { cut:c, kind:"5'", seq:motif.slice(c, far), over:far - c }
+    : { cut:c, kind:"3'", seq:motif.slice(far, c), over:c - far };
+}
+
+// Fragments left by cutting at every visible site. Coordinates are 0-based with
+// `to` exclusive; `wrap` marks the piece that crosses the origin.
+function digestFragments(dna, sites) {
+  const L = dna.length;
+  const byCut = new Map();
+  for (const s of sites) {
+    const p = (s.pos + cutOffset(s.name, ENZYMES[s.name] || "")) % L;
+    if (!byCut.has(p)) byCut.set(p, []);
+    if (!byCut.get(p).includes(s.name)) byCut.get(p).push(s.name);
+  }
+  const cuts = [...byCut.entries()]
+    .map(([pos, names]) => ({ pos, names }))
+    .sort((a, b) => a.pos - b.pos);
+
+  const frags = [];
+  const add = (from, to, left, right, wrap) => {
+    const size = wrap ? L - from + to : to - from;
+    if (size > 0) frags.push({ from, to, size, wrap, left, right });
+  };
+  if (!cuts.length) {
+    frags.push({ from:0, to:L, size:L, wrap:false, left:[], right:[], uncut:dna.circular });
+  } else if (cuts.length === 1 && dna.circular) {
+    frags.push({ from:cuts[0].pos, to:cuts[0].pos, size:L, wrap:false,
+      left:cuts[0].names, right:cuts[0].names, linearised:true });
+  } else if (dna.circular) {
+    for (let i = 0; i < cuts.length; i++) {
+      const a = cuts[i], b = cuts[(i + 1) % cuts.length];
+      add(a.pos, b.pos, a.names, b.names, i === cuts.length - 1);
+    }
+  } else {
+    add(0, cuts[0].pos, [], cuts[0].names, false);
+    for (let i = 0; i + 1 < cuts.length; i++)
+      add(cuts[i].pos, cuts[i + 1].pos, cuts[i].names, cuts[i + 1].names, false);
+    add(cuts[cuts.length - 1].pos, L, cuts[cuts.length - 1].names, [], false);
+  }
+  return { cuts, frags };
+}
+
+function fragRegion(fr, L) {
+  if (fr.uncut) return "uncut circular";
+  if (fr.linearised) return `linearised at ${(fr.from + 1).toLocaleString()}`;
+  if (fr.wrap) return `${(fr.from + 1).toLocaleString()}–${L.toLocaleString()} + 1–${fr.to.toLocaleString()}`;
+  return `${(fr.from + 1).toLocaleString()}–${fr.to.toLocaleString()}`;
+}
+// The linear piece of a fragment worth showing in the sequence panel.
+function fragPiece(fr, L) {
+  if (fr.uncut || fr.linearised) return null;
+  if (!fr.wrap) return [fr.from, fr.to];
+  return L - fr.from >= fr.to ? [fr.from, L] : [0, fr.to];
+}
+const fmtBp = (n) => n >= 1000
+  ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k"
+  : String(n);
+
+const digest = { sort:"size", cuts:[], frags:[], sites:[], sel:-1 };
+function digestEnzNames() { return [...new Set(digest.sites.map((s) => s.name))].sort(); }
+function digestLaneLabel() {
+  const n = digestEnzNames();
+  if (!n.length) return "none";
+  return n.length <= 2 ? n.join(" + ") : `${n[0]} +${n.length - 1}`;
+}
+
+function openDigest() {
+  if (!state.dna) return;
+  const all = enzymeSites(state.dna.sequence, state.dna.circular);
+  digest.sites = all.filter((s) => !state.hiddenEnzymes.has(s.name));
+  const r = digestFragments(state.dna, digest.sites);
+  digest.cuts = r.cuts; digest.frags = r.frags; digest.sel = -1;
+  document.getElementById("digest").hidden = false;
+  renderDigest();
+}
+function closeDigest() { document.getElementById("digest").hidden = true; }
+
+function digestRows() {
+  const rows = digest.frags.map((f, i) => ({ f, i }));
+  rows.sort(digest.sort === "size"
+    ? (a, b) => b.f.size - a.f.size
+    : (a, b) => a.f.from - b.f.from);
+  return rows;
+}
+
+function renderDigest() {
+  const dna = state.dna, L = dna.length;
+  const rows = digestRows();
+  const names = digestEnzNames();
+  document.getElementById("digtitle").textContent =
+    names.length ? `Digest — ${names.join(", ")}` : "Digest";
+  document.getElementById("digsub").textContent =
+    `${digest.cuts.length} cut${digest.cuts.length === 1 ? "" : "s"} · ${digest.frags.length} fragment${digest.frags.length === 1 ? "" : "s"}`;
+  document.getElementById("digsrt").textContent = `sort: ${digest.sort}`;
+
+  const body = document.getElementById("digestbody");
+  body.innerHTML = "";
+  rows.forEach(({ f, i }, n) => {
+    const tr = document.createElement("tr");
+    tr.dataset.i = i;
+    if (i === digest.sel) tr.classList.add("sel");
+    const ends = (f.left.length || f.right.length)
+      ? `${f.left.join("/") || "—"} │ ${f.right.join("/") || "—"}` : "—";
+    tr.innerHTML = `<td class="num">${n + 1}</td><td class="num"><b>${f.size.toLocaleString()}</b></td>` +
+      `<td>${fragRegion(f, L)}</td><td class="end">${esc(ends)}</td>`;
+    tr.addEventListener("click", () => {
+      digest.sel = i;
+      document.querySelectorAll("#digestbody tr").forEach((r) =>
+        r.classList.toggle("sel", +r.dataset.i === i));
+      const p = fragPiece(f, L);
+      const head = p ? `<b>${esc(digestLaneLabel())} fragment</b>  ${f.size.toLocaleString()} bp\nregion: ${fragRegion(f, L)}`
+        : `<b>${esc(digestLaneLabel())}</b>  ${f.size.toLocaleString()} bp\n${fragRegion(f, L)}`;
+      const ov = names.length === 1 ? cutInfo(names[0]) : null;
+      document.getElementById("detail").textContent = head +
+        (ov && ov.over ? `\noverhang: ${ov.kind} ${ov.seq} (${ov.over} nt)` :
+          ov ? "\noverhang: blunt" : "");
+      if (p) focusRange(p[0], p[1]);
+    });
+    body.appendChild(tr);
+  });
+
+  const total = digest.frags.reduce((s, f) => s + f.size, 0);
+  let foot = `total ${total.toLocaleString()} bp of ${L.toLocaleString()} bp`;
+  if (names.length === 1) {
+    const ci = cutInfo(names[0]);
+    foot += ` · ${names[0]} cuts ${ci.kind === "blunt" ? "blunt" : `to leave a ${ci.kind} ${ci.seq} overhang`}`;
+  } else if (digest.cuts.length > 60) {
+    foot += " · too many cuts for a useful digest";
+  }
+  document.getElementById("digfoot").textContent = foot;
+  drawGel();
+}
+
+const LADDER = [10000, 8000, 6000, 5000, 4000, 3000, 2000, 1500, 1000, 800, 600, 500, 400, 300, 200, 100];
+// ladder sizes worth printing a label for (log scale crowds the rest)
+const LADDER_LABEL = new Set([10000, 3000, 1000, 500, 100]);
+
+function drawGel() {
+  const cv = document.getElementById("gelcv");
+  const w = cv.clientWidth || 190, h = cv.clientHeight || 320;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr)) cv.width = Math.round(w * dpr);
+  if (cv.height !== Math.round(h * dpr)) cv.height = Math.round(h * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = PAL.gelBg; ctx.fillRect(0, 0, w, h);
+
+  const sizes = digest.frags.map((f) => f.size);
+  const total = sizes.reduce((a, b) => a + b, 0) || 1;
+  const maxS = Math.max(LADDER[0], ...sizes);
+  // keep 100 bp as the floor unless the digest really does run smaller, so tiny
+  // fragments (an MCS, say) still separate instead of piling up at the front
+  const minS = Math.max(1, Math.min(100, ...sizes));
+  const top = 34, bot = h - 16;
+  const span = Math.log10(maxS) - Math.log10(minS) || 1;
+  const yOf = (s) => top + Math.max(0, Math.min(1,
+    (Math.log10(maxS) - Math.log10(Math.max(s, minS))) / span)) * (bot - top);
+
+  const laneW = 46, gap = 14, x0 = 40;
+  const lanes = [{ label:"ladder", sizes:LADDER, ladder:true },
+                 { label:digestLaneLabel(), sizes, ladder:false }];
+  const laneText = (s) => {                       // keep lane titles inside the lane
+    const max = Math.floor(laneW / 5.2);
+    return s.length > max ? s.slice(0, Math.max(1, max - 1)) + "…" : s;
+  };
+  ctx.textBaseline = "alphabetic";
+  lanes.forEach((lane, li) => {
+    const lx = x0 + li * (laneW + gap);
+    ctx.fillStyle = PAL.dim; ctx.font = "600 9px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(laneText(lane.label), lx + laneW / 2, 13);
+    ctx.fillStyle = PAL.gelWell;
+    ctx.fillRect(lx, top - 10, laneW, 6);   // well
+    // fragments of equal size co-migrate: group them into one band whose
+    // brightness follows the combined mass, and print one label for the group
+    const groups = new Map();
+    for (const s of [...lane.sizes].sort((a, b) => b - a)) {
+      const key = Math.round(yOf(s));
+      if (!groups.has(key)) groups.set(key, { y: key, sizes: [] });
+      groups.get(key).sizes.push(s);
+    }
+    const roomForLabels = !lane.ladder && w - (lx + laneW) > 36 && lane.sizes.length <= 24;
+    let lastLabel = -99;
+    [...groups.values()].sort((a, b) => a.y - b.y).forEach((g) => {
+      const mass = g.sizes.reduce((a, b) => a + b, 0);
+      const th = Math.max(2, Math.min(5, 2 + mass / 2500));
+      ctx.globalAlpha = lane.ladder ? 0.9
+        : Math.min(1, 0.45 + 0.6 * Math.sqrt(mass / total));   // floored so minor bands read
+      ctx.fillStyle = PAL.gelBand;
+      if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(lx, g.y - th / 2, laneW, th, th / 2);
+        ctx.fill();
+      } else {
+        ctx.fillRect(lx, g.y - th / 2, laneW, th);
+      }
+      ctx.globalAlpha = 1;
+      const label = lane.ladder
+        ? (LADDER_LABEL.has(g.sizes[0]) ? fmtBp(g.sizes[0]) : null)
+        : (roomForLabels ? g.sizes.map(fmtBp).join("+") : null);
+      if (label && g.y - lastLabel >= 9) {
+        ctx.fillStyle = PAL.dim; ctx.font = "8.5px system-ui";
+        ctx.textAlign = lane.ladder ? "right" : "left";
+        ctx.fillText(label, lane.ladder ? lx - 5 : lx + laneW + 4, g.y + 3);
+        lastLabel = g.y;
+      }
+    });
+  });
+  ctx.fillStyle = PAL.dim; ctx.font = "8px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("log scale", 4, h - 4);
+}
+
+document.getElementById("digclose").addEventListener("click", closeDigest);
+document.getElementById("digsrt").addEventListener("click", () => {
+  digest.sort = digest.sort === "size" ? "position" : "size";
+  renderDigest();
+});
+document.getElementById("digcopy").addEventListener("click", async () => {
+  const L = state.dna ? state.dna.length : 0;
+  const tsv = digestRows().map(({ f }, n) =>
+    `${n + 1}\t${f.size}\t${fragRegion(f, L)}\t${(f.left.join("/") || "—")} | ${(f.right.join("/") || "—")}`)
+    .join("\n");
+  try { await navigator.clipboard.writeText(tsv); } catch {}
+});
+document.getElementById("digest").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeDigest();
+});
 
 // ---------------- translation ----------------
 const COMP = { A: "T", T: "A", G: "C", C: "G", N: "N" };
@@ -359,6 +681,7 @@ function render(dna) {
     `${dna.length.toLocaleString()} bp · ${dna.circular ? "circular" : "linear"}` +
     (dna.notes.Type ? ` · ${dna.notes.Type}` : "");
 
+  document.getElementById("findbtn").disabled = false;
   const W = wrap.clientWidth || 900, H = wrap.clientHeight || 700;
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}` }, wrap);
   const defs = el("defs", {}, svg);
@@ -596,7 +919,11 @@ function renderSidebar(dna, sites, allSites) {
   const bNone = document.createElement("button");
   bNone.textContent = "None";
   bNone.addEventListener("click", () => { state.hiddenEnzymes = new Set(Object.keys(ENZYMES)); render(state.dna); });
-  bar.append(bAll, bNone);
+  const bDig = document.createElement("button");
+  bDig.textContent = "Digest…";
+  bDig.title = "Fragment sizes and a simulated gel for the visible enzymes";
+  bDig.addEventListener("click", openDigest);
+  bar.append(bAll, bNone, bDig);
   const grid = document.createElement("div");
   grid.className = "enzgrid";
   const counts = new Map();
@@ -635,6 +962,19 @@ function renderSidebar(dna, sites, allSites) {
   }
 }
 
+// Select a range in the sequence panel and scroll it into view.
+function focusRange(a, b, center = true) {
+  if (!state.dna || seqView.dna !== state.dna) return;
+  seqView.sel = { a: Math.max(0, Math.min(a, b)), b: Math.min(state.dna.length, Math.max(a, b)) };
+  if (center) {
+    const { w } = seqMetrics();
+    seqView.offset = (seqView.sel.a + seqView.sel.b) / 2 - (w / seqView.ppb) / 2;
+    clampOffset();
+  }
+  renderSeq();
+  updateSelArc();
+}
+
 function selectEnzSite(s, row) {
   state.selected = -1;
   markSelected();
@@ -642,16 +982,11 @@ function selectEnzSite(s, row) {
   if (row) row.classList.add("sel");
   const motif = ENZYMES[s.name] || "";
   const b = Math.min(state.dna.length, s.pos + motif.length);
-  if (seqView.dna === state.dna) {
-    seqView.sel = { a: s.pos, b };
-    const { w } = seqMetrics();
-    seqView.offset = s.pos + motif.length / 2 - (w / seqView.ppb) / 2;
-    clampOffset();
-    renderSeq();
-    updateSelArc();
-  }
+  focusRange(s.pos, b);
+  const ci = cutInfo(s.name);
   document.getElementById("detail").innerHTML =
-    `<b>${esc(s.name)}</b>  restriction site\nsite: ${s.pos + 1}–${b}\nmotif: ${esc(motif)}`;
+    `<b>${esc(s.name)}</b>  restriction site\nsite: ${s.pos + 1}–${b}\nmotif: ${esc(motif)}` +
+    `\ncut: ${ci.cut} (after site start) · ${ci.kind === "blunt" ? "blunt end" : `${ci.kind} ${ci.seq} overhang`}`;
 }
 
 function select(i) {
@@ -684,6 +1019,254 @@ function markSelected() {
   document.querySelectorAll("#enzlist .row.sel").forEach((r) => r.classList.remove("sel"));
 }
 
+// ---------------- find ----------------
+// Hits carry a `start` in unrolled coordinates (may exceed length for motifs
+// spanning the origin), so span text and context are computed the same way for
+// both strands and for wrapping matches.
+const findState = { q:"", mode:"dna", hits:[], cur:-1, capped:false };
+const DNA_Q = /^[ACGTURYSWKMBDHVN]+$/i;
+const AA_Q = /^[ARNDCEQGHILKMFPSTWYV*X]+$/i;
+const HIT_CAP = 4000;
+
+function hitsSorted(hits) {
+  hits.sort((a, b) => a.pa - b.pa || a.size - b.size);
+  const out = [];
+  for (const h of hits) {
+    const last = out[out.length - 1];
+    if (last && last.pa === h.pa && last.size === h.size && last.strand === h.strand) continue;
+    out.push(h);
+  }
+  return out;
+}
+
+function makeHit(L, start, size, strand, wrap, frame) {
+  const pa = ((start % L) + L) % L;
+  return { start, size, strand, frame, wrap, pa, pb: Math.min(pa + size, L) };
+}
+
+function findMatches(dna, q, mode) {
+  const L = dna.length;
+  const S = dna.sequence.toUpperCase();
+  const hits = [];
+  let capped = false;
+  const scan = (text, m, onHit) => {
+    const re = mode === "regex" ? new RegExp(q.toUpperCase(), "g")
+      : new RegExp("(?=(" + [...q].map((c) => IUPAC_RE[c] || ".").join("") + "))", "g");
+    let mm;
+    while ((mm = re.exec(text)) && hits.length < HIT_CAP) {
+      const len = mode === "regex" ? mm[0].length : m;
+      if (len) onHit(mm.index, len);
+      re.lastIndex = mm.index + 1;
+    }
+    if (mm) capped = true;   // stopped on the cap, not at the end of the sequence
+  };
+
+  if (mode === "protein") {
+    if (!AA_Q.test(q)) return { err:"not a protein query" };
+    const pat = q.toUpperCase();
+    const ext = dna.circular ? 3 * pat.length + 2 : 0;
+    const hay = dna.circular ? S + S.slice(0, ext) : S;
+    const rev = revcomp(S);
+    const hayR = dna.circular ? rev + rev.slice(0, ext) : rev;
+    for (let f = 0; f < 3 && !capped; f++) {
+      for (const [text, strand] of [[translateFrame(hay, f), 1], [translateFrame(hayR, f), -1]]) {
+        let from = 0, j;
+        while ((j = text.indexOf(pat, from)) >= 0) {
+          if (hits.length >= HIT_CAP) { capped = true; break; }
+          const k = j * 3 + f, size = 3 * pat.length;
+          if (k < L) {
+            const start = strand === 1 ? k : L - k - size;
+            hits.push(makeHit(L, start, size, strand,
+              strand === 1 ? start + size > L : start < 0, (strand === 1 ? "+" : "−") + (f + 1)));
+          }
+          from = j + 1;
+        }
+        if (capped) break;
+      }
+    }
+    return { hits: hitsSorted(hits), capped };
+  }
+
+  // DNA / regex: scan the plus strand, then the reverse complement and map back
+  if (mode === "dna" && !DNA_Q.test(q)) return { err:"not a DNA motif" };
+  const m = mode === "regex" ? 0 : q.length;
+  const ext = dna.circular ? (mode === "regex" ? 200 : Math.max(m - 1, 0)) : 0;
+  const hay = dna.circular ? S + S.slice(0, ext) : S;
+  const rev = revcomp(S);
+  const hayR = dna.circular ? rev + rev.slice(0, ext) : rev;
+  try {
+    scan(hay, m, (k, len) => {
+      if (k < L) hits.push(makeHit(L, k, len, 1, k + len > L));
+    });
+    scan(hayR, m, (k, len) => {
+      const start = L - k - len;
+      if (k < L) hits.push(makeHit(L, start, len, -1, start < 0));
+    });
+  } catch (e) {
+    return { err:"bad pattern" };
+  }
+  return { hits: hitsSorted(hits), capped };
+}
+
+function hitSpan(h, L) {
+  return h.wrap ? `${h.pa + 1}–${L.toLocaleString()} + 1–${((h.start + h.size) % L).toLocaleString()}`
+    : `${(h.pa + 1).toLocaleString()}–${h.pb.toLocaleString()}`;
+}
+function hitContext(dna, h, flank = 12) {
+  const at = (i) => dna.sequence[((i % dna.length) + dna.length) % dna.length] || "";
+  let left = "", right = "";
+  for (let k = 1; k <= flank; k++) left = at(h.start - k) + left;
+  for (let k = 0; k < flank; k++) right += at(h.start + h.size + k);
+  const mid = [...Array(h.size)].map((_, k) => at(h.start + k)).join("");
+  return `${left.toLowerCase()} ${mid} ${right.toLowerCase()}`;
+}
+
+function findModeLabel() {
+  return { dna:"DNA motif", protein:"protein", regex:"regex" }[findState.mode] || "search";
+}
+
+function openFind(open) {
+  const bar = document.getElementById("findbar");
+  if (open && !state.dna) return;
+  bar.hidden = !open;
+  const btn = document.getElementById("findbtn");
+  btn.style.background = open ? PAL.btnActive : "";
+  btn.setAttribute("aria-expanded", String(open));
+  if (open) {
+    document.getElementById("findq").focus();
+    document.getElementById("findq").select();
+  } else {
+    findState.hits = []; findState.cur = -1; findState.capped = false;
+    document.getElementById("findcount").textContent = "";
+    renderSeq();
+  }
+}
+
+function clearFind() {
+  findState.q = ""; findState.hits = []; findState.cur = -1; findState.capped = false;
+  const q = document.getElementById("findq");
+  if (q) q.value = "";
+  const c = document.getElementById("findcount");
+  if (c) c.textContent = "";
+  const bar = document.getElementById("findbar");
+  if (bar && !bar.hidden && !state.dna) bar.hidden = true;
+}
+
+function gotoHit(i) {
+  const n = findState.hits.length;
+  if (!n) return;
+  const h = findState.hits[((i % n) + n) % n];
+  findState.cur = ((i % n) + n) % n;
+  state.selected = -1;
+  markSelected();
+  closeDrawer();
+  focusRange(h.pa, h.pb);
+  const dna = state.dna;
+  document.getElementById("detail").innerHTML =
+    `<b>hit ${findState.cur + 1} of ${n}</b>  ${findModeLabel()}\n` +
+    `span: ${hitSpan(h, dna.length)} (${h.strand === 1 ? "+" : "−"}${h.frame ? " frame " + h.frame : ""})\n` +
+    `context: ${esc(hitContext(dna, h))}`;
+  showFindCount();
+}
+
+function showFindCount() {
+  const c = document.getElementById("findcount");
+  const n = findState.hits.length;
+  if (!findState.q) { c.textContent = ""; return; }
+  if (!n) { c.textContent = "no hits"; return; }
+  const plus = findState.capped ? "+" : "";
+  c.textContent = findState.cur < 0 ? `${n}${plus} hit${n === 1 && !plus ? "" : "s"}`
+    : `${findState.cur + 1} / ${n}${plus}`;
+}
+
+function runFind(jump) {
+  const dna = state.dna;
+  const c = document.getElementById("findcount");
+  findState.q = document.getElementById("findq").value.trim();
+  findState.mode = document.getElementById("findmode").value;
+  findState.hits = []; findState.cur = -1; findState.capped = false;
+  if (!dna || !findState.q) { c.textContent = ""; renderSeq(); return; }
+  const q = findState.q;
+
+  // a bare number jumps to that base, "a-b" selects a range
+  const num = /^(\d[\d,]*)\s*$/.exec(q);
+  const rng = /^(\d[\d,]*)\s*[-–]\s*(\d[\d,]*)$/.exec(q);
+  const pos = (v) => Math.max(1, Math.min(dna.length, +v.replace(/,/g, "")));
+  if (num || rng) {
+    state.selected = -1;
+    markSelected();
+    if (num) {
+      const p = pos(num[1]);
+      focusRange(p - 1, p);
+      c.textContent = `position ${p.toLocaleString()}`;
+      document.getElementById("detail").innerHTML =
+        `<b>position ${p.toLocaleString()}</b>\nbase: ${esc(dna.sequence[p - 1] || "?")}`;
+    } else {
+      let a = pos(rng[1]), b = pos(rng[2]);
+      if (a > b) [a, b] = [b, a];
+      focusRange(a - 1, b);
+      c.textContent = `${(b - a + 1).toLocaleString()} bp`;
+      document.getElementById("detail").innerHTML =
+        `<b>${a.toLocaleString()}–${b.toLocaleString()}</b>\n${(b - a + 1).toLocaleString()} bp selected`;
+    }
+    renderSeq();
+    return;
+  }
+
+  const r = findMatches(dna, q, findState.mode);
+  if (r.err) { c.textContent = r.err; renderSeq(); return; }
+  findState.hits = r.hits;
+  findState.capped = !!r.capped;
+  if (findState.hits.length && jump) gotoHit(0);
+  else { showFindCount(); renderSeq(); }
+}
+
+let findTimer = null;
+function flushFind() {
+  if (findTimer) { clearTimeout(findTimer); findTimer = null; runFind(false); }
+}
+
+function stepHit(d) {
+  flushFind();
+  if (!findState.hits.length) { runFind(true); return; }
+  const n = findState.hits.length;
+  const cur = findState.cur;
+  gotoHit(cur < 0 ? (d > 0 ? 0 : n - 1) : cur + d);
+}
+
+function wireFind() {
+  const q = document.getElementById("findq");
+  q.addEventListener("input", () => {           // debounce: heavy patterns run once, not per key
+    clearTimeout(findTimer);
+    findTimer = setTimeout(() => { findTimer = null; runFind(false); }, 200);
+  });
+  q.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); stepHit(e.shiftKey ? -1 : 1); }
+    if (e.key === "Escape") { e.preventDefault(); openFind(false); }
+  });
+  q.addEventListener("focus", () => { if (q.value && !findState.hits.length) runFind(false); });
+  document.getElementById("findmode").addEventListener("change", () => {
+    clearTimeout(findTimer); findTimer = null; runFind(true);
+  });
+  document.getElementById("findnext").addEventListener("click", () => stepHit(1));
+  document.getElementById("findprev").addEventListener("click", () => stepHit(-1));
+  document.getElementById("findclose").addEventListener("click", () => openFind(false));
+  document.getElementById("findbtn").addEventListener("click", () =>
+    openFind(document.getElementById("findbar").hidden));
+  document.addEventListener("keydown", (e) => {
+    const key = e.key || "";
+    if ((e.metaKey || e.ctrlKey) && key.toLowerCase() === "f") {
+      e.preventDefault();
+      openFind(true);
+    } else if (key === "Escape") {
+      if (!document.getElementById("digest").hidden) closeDigest();
+      else if (!document.getElementById("findbar").hidden &&
+               document.activeElement !== q) openFind(false);   // the input handles its own Esc
+    }
+  });
+}
+wireFind();
+
 // ---------------- sequence panel ----------------
 
 const RULER_H = 16, LANE_H = 13, SEQ_Y_OFF = 10;
@@ -692,6 +1275,7 @@ function initSeq(dna) {
   seqView.dna = dna;
   seqView.sel = null;
   seqView.offset = 0;
+  clearFind();
   renderSeq();
 }
 
@@ -745,6 +1329,27 @@ function renderSeq() {
     ctx.stroke();
   }
 
+  // find hits: faint bands for every match, solid band for the current one
+  if (findState.hits.length && findState.hits.length <= 500) {
+    ctx.fillStyle = PAL.find;
+    ctx.globalAlpha = 0.3;
+    findState.hits.forEach((hit, i) => {
+      if (i === findState.cur) return;
+      const x = xOf(hit.pa), x1 = xOf(hit.pb);
+      if (x1 < 0 || x > w) return;
+      ctx.fillRect(x, 0, Math.max(1.5, x1 - x), h);
+    });
+    ctx.globalAlpha = 1;
+    const cur = findState.hits[findState.cur];
+    if (cur) {
+      const x = xOf(cur.pa), x1 = xOf(cur.pb);
+      if (x1 >= 0 && x <= w) {
+        ctx.fillStyle = PAL.findFill;
+        ctx.fillRect(x, 0, Math.max(3, x1 - x), h);
+      }
+    }
+  }
+
   // ruler
   const step = niceStep(60);
   ctx.fillStyle = PAL.dim; ctx.font = "9px system-ui"; ctx.textAlign = "left";
@@ -761,6 +1366,20 @@ function renderSeq() {
     }
   }
   ctx.fillRect(0, RULER_H - 1, w, 1);
+
+  // caret above the current find hit
+  {
+    const cur = findState.hits[findState.cur];
+    if (cur) {
+      const x = xOf(cur.pa), x1 = xOf(cur.pb);
+      if (x1 >= 0 && x <= w) {
+        ctx.fillStyle = PAL.find;
+        ctx.beginPath();
+        ctx.moveTo(x, 1); ctx.lineTo(Math.max(x + 6, x1), 1); ctx.lineTo(x, 7);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+  }
 
   // feature lanes
   seqView.hitRects = [];
@@ -1037,7 +1656,10 @@ wrap.addEventListener("drop", (e) => {
 
 const qn = new URLSearchParams(location.search).get("ncbi");
 if (qn) document.getElementById("ncbi").value = qn;
-window.addEventListener("resize", () => { if (state.dna) { render(state.dna); renderSeq(); } });
+window.addEventListener("resize", () => {
+  if (state.dna) { render(state.dna); renderSeq(); }
+  if (!document.getElementById("digest").hidden) drawGel();
+});
 
 // mobile sidebar drawer
 const asideEl = document.querySelector("aside");
