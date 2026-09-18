@@ -42,6 +42,8 @@ URL parameters:
 - **Sidebar**: feature list, primer list, restriction sites, and per-feature qualifier details.
 - **Sequence panel**: drag to select, wheel to scroll, Ctrl/⌘-wheel or +/−/fit to zoom, letter glyphs at high zoom / barcode at low zoom, and a **copy** button for the selected slice. Selection is mirrored as an arc on the map.
 - **Translation view**: the **AA** button under the sequence panel toggles three forward reading frames (+1/+2/+3) drawn below the sequence — single-letter amino acids at high zoom, stop-codon ticks at low zoom. Codons inside a drag selection (aligned to the selection start) are highlighted, and the panel reports `N aa · fK` for the frame with fewest stops. Clicking a CDS shows its protein in the sidebar: the `/translation` qualifier when present, otherwise translated from the sequence (reverse-strand and `join()`ed CDSs handled; stop codon excluded, GTG/TTG/ATT starts shown as Met).
+- **Selection stats**: a strip above the sequence panel reports **len**, **GC%**, **MW** and — for primer-sized selections — **Tm** for the current selection (drag in the panel, a Find range, or a feature/site click). Tm uses the nearest-neighbour model (SantaLucia 1998 unified parameters, 250 nM strands, 50 mM Na⁺), with the Wallace rule for very short selections.
+- **Map export**: the header **SVG** / **PNG** buttons download the circular map — SVG as an editable vector file, PNG rasterized at 2–3× the screen size for slides and print. The export matches the current theme and shows only the visible enzyme sites.
 
 ## Format support notes
 
@@ -56,6 +58,8 @@ URL parameters:
 - Cut positions come from a fixed `ENZYME_CUT` table; an enzyme missing from it is assumed to cut at the middle of its recognition site.
 - The digest gel is schematic: log-spaced bands sized by fragment mass, co-migrating fragments merged. Not a model of real electrophoresis.
 - No GenBank writing/export and no FASTA support.
+- Tm is a thermodynamic estimate at fixed defaults (250 nM strands, 50 mM Na⁺, no Mg²⁺/dNTP correction) — a guide, not a PCR protocol value.
+- Map export captures the map only, not the sidebar or sequence panel.
 
 ## License
 
