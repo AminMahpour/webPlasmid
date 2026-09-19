@@ -18,10 +18,12 @@
   header h1 { font-size:16px; color:var(--hi) }
   header .meta { color:var(--dim); font-size:12px }
   header .spacer { flex:1 }
-  #themeseg { display:flex; border:1px solid var(--line); border-radius:5px; overflow:hidden }
-  #themeseg button { border:0; border-radius:0; padding:5px 9px; font-size:12px }
-  #themeseg button + button { border-left:1px solid var(--line) }
+  #themeseg, #exportseg { display:flex; border:1px solid var(--line); border-radius:5px; overflow:hidden }
+  #themeseg button, #exportseg button { border:0; border-radius:0; padding:5px 9px; font-size:12px }
+  #themeseg button + button, #exportseg button + button { border-left:1px solid var(--line) }
   #themeseg button[aria-pressed="true"] { background:var(--btnHover); color:var(--hi) }
+  button:disabled { opacity:.45; cursor:default }
+  button:disabled:hover { background:var(--btn) }
   button, label.btn { background:var(--btn); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:6px 12px; font:600 13px inherit; cursor:pointer }
   button:hover, label.btn:hover { background:var(--btnHover) }
   #ncbi { background:var(--field); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:6px 10px; font:13px inherit; width:210px }
@@ -34,6 +36,11 @@
   #seqcv { flex:1; min-height:0; width:100%; display:block; cursor:text }
   #seqtools { order:-1; display:flex; gap:5px; align-items:center; justify-content:flex-end; padding:3px 8px; border-bottom:1px solid var(--line); background:var(--panel); font-size:11px; color:var(--dim) }
   #seqinfo { margin-right:auto }
+  #selstats { order:-1; flex:none; display:flex; flex-wrap:wrap; gap:2px 18px; padding:4px 9px;
+    border-bottom:1px solid var(--line); background:var(--panel); font-size:11.5px; color:var(--txt) }
+  #selstats[hidden] { display:none }
+  #selstats .lab { color:var(--dim); margin-right:5px }
+  #selstats b { font-weight:600; color:var(--hi); font-variant-numeric:tabular-nums }
   #seqtools button { padding:2px 8px; font-size:12px }
   #mapwrap { flex:1; position:relative; display:flex; align-items:center; justify-content:center }
   #mapwrap.drag::after { content:"Drop .dna / .gb file"; position:absolute; inset:12px; border:2px dashed var(--accent); border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; color:var(--drop); background:var(--dropBg); z-index:5 }
@@ -58,7 +65,6 @@
   .feat path.sel { stroke:#ffffff; stroke-width:1.8; filter:brightness(1.45) drop-shadow(0 0 4px rgba(255,255,255,.55)) }
   .row.sel { background:var(--btnHover); outline:1px solid var(--accent) }
   .empty { color:var(--dim); padding:40px; text-align:center }
-  .tick text { font-size:9px; fill:var(--dim) }
   /* find bar: floats over the map so it costs no layout */
   #findbar { position:absolute; top:8px; left:8px; z-index:6; display:flex; align-items:center; gap:5px;
     background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:5px 6px;
@@ -129,6 +135,10 @@
     <button data-theme="dark" title="Always dark">Dark</button>
     <button data-theme="light" title="Always light">Light</button>
   </div>
+  <div id="exportseg" role="group" aria-label="Export map image">
+    <button id="exportsvg" title="Download the map as an editable vector SVG" disabled>SVG</button>
+    <button id="exportpng" title="Download the map as a high-resolution PNG image" disabled>PNG</button>
+  </div>
   <input id="ncbi" placeholder="NCBI accession(s), e.g. X83542" spellcheck="false">
   <button id="fetchbtn" title="Fetch from NCBI">Fetch</button>
   <select id="reclist" hidden></select>
@@ -170,6 +180,7 @@
       <button id="zoomin" title="zoom in">+</button>
       <button id="copybtn">copy</button>
     </div>
+    <div id="selstats" hidden></div>
   </div>
 </main>
 <div id="digest" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="digtitle">
@@ -213,7 +224,7 @@ const TYPE_COLORS = { CDS:"#3aa0ff", promoter:"#ffb84d", terminator:"#c79bff", r
 // with the html[data-theme="light"] CSS block). TYPE_COLORS are the per-feature
 // hues on dark; light uses darker variants so they read on a white background.
 const THEMES = {
-  dark: { features:TYPE_COLORS, laneLabel:"#0b0f17",
+  dark: { bg:"#0b0f17", features:TYPE_COLORS, laneLabel:"#0b0f17",
     seqBg:"#0d1320", base:"#c9d6ea", baseLower:"#6a7f9f", dim:"#67799a", hi:"#e8f0ff",
     txt:"#c9d6ea", grid:"#1a2436", backbone:"#2e4160", tick:"#3a5580",
     featStroke:"#0b0f17", laneStroke:"#0d1320", sel:"#ffd24a",
@@ -222,7 +233,7 @@ const THEMES = {
     selFill:"rgba(77,138,208,.25)", selEdge:"rgba(120,180,255,.8)", aaSelFill:"rgba(77,138,208,.18)",
     barcode:"rgba(201,214,234,.5)", stopBar:"rgba(255,125,184,.55)", btnActive:"#2e4160",
     find:"#ff9d4d", findFill:"rgba(255,157,77,.30)", gelBg:"#060a12", gelBand:"#8fe0ff", gelWell:"#1a2436" },
-  light: { features:{ CDS:"#1a79d1", promoter:"#b0730c", terminator:"#8554c9", rep_origin:"#0e86a8",
+  light: { bg:"#f2f5fa", features:{ CDS:"#1a79d1", promoter:"#b0730c", terminator:"#8554c9", rep_origin:"#0e86a8",
       primer_bind:"#2f9e45", protein_bind:"#b8830a", misc_feature:"#5c78a5", regulatory:"#c2276b",
       misc_restriction:"#54648c", source:"#33415e" }, laneLabel:"#ffffff",
     seqBg:"#f7f9fc", base:"#1c2a40", baseLower:"#8a97ad", dim:"#5c6f8c", hi:"#0e2138",
@@ -682,6 +693,8 @@ function render(dna) {
     (dna.notes.Type ? ` · ${dna.notes.Type}` : "");
 
   document.getElementById("findbtn").disabled = false;
+  document.getElementById("exportsvg").disabled = false;
+  document.getElementById("exportpng").disabled = false;
   const W = wrap.clientWidth || 900, H = wrap.clientHeight || 700;
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}` }, wrap);
   const defs = el("defs", {}, svg);
@@ -734,7 +747,9 @@ function render(dna) {
     const [x2, y2] = polar(cx, cy, R + 5, ang(p));
     const [tx, ty] = polar(cx, cy, tickR, ang(p));
     el("line", { x1, y1, x2, y2, stroke: PAL.tick, "stroke-width": 1.5 }, tickg);
-    const t = el("text", { x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "middle" }, tickg);
+    // fill/size as attributes (not CSS) so the exported SVG stays self-contained
+    const t = el("text", { x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "middle",
+      fill: PAL.dim, "font-size": 9 }, tickg);
     t.textContent = p.toLocaleString();
   }
 
@@ -1267,6 +1282,132 @@ function wireFind() {
 }
 wireFind();
 
+// ---------------- selection stats ----------------
+// Nearest-neighbour Tm: SantaLucia 1998 unified parameters (PNAS 95:1460,
+// Table 2, 1 M NaCl). 16-entry lookup by top-strand dinucleotide; each of the
+// 10 table families also covers its reverse-complement mirror.
+const NN_DH = { AA:-7.9, TT:-7.9, AT:-7.2, TA:-7.2, CA:-8.5, TG:-8.5, GT:-8.4, AC:-8.4,
+  CT:-7.8, AG:-7.8, GA:-8.2, TC:-8.2, CG:-10.6, GC:-9.8, GG:-8.0, CC:-8.0 };
+const NN_DS = { AA:-22.2, TT:-22.2, AT:-20.4, TA:-21.3, CA:-22.7, TG:-22.7, GT:-22.4, AC:-22.4,
+  CT:-21.0, AG:-21.0, GA:-22.2, TC:-22.2, CG:-27.2, GC:-24.4, GG:-19.9, CC:-19.9 };
+const NA_M = 0.05;   // reported Tm assumes 50 mM Na+
+
+function seqComposition(s) {
+  let nA = 0, nC = 0, nG = 0, nT = 0, nN = 0;
+  for (const ch of s.toUpperCase()) {
+    if (ch === "A") nA++; else if (ch === "C") nC++; else if (ch === "G") nG++;
+    else if (ch === "T" || ch === "U") nT++; else nN++;
+  }
+  return { nA, nC, nG, nT, nN };
+}
+// dsDNA molecular weight from anhydrous nucleotide residues
+// (dA 313.21, dC 289.18, dG 329.21, dT 304.19): an A·T pair is 617.40, a
+// G·C pair 618.39; +2.016 terminal hydrogens per strand (5'/3'-OH ends).
+function dnaMolecularWeight(c, len) {
+  return (c.nA + c.nT) * 617.40 + (c.nG + c.nC) * 618.39 + c.nN * 617.90 + 4.03;
+}
+function selectionTm(seq, c) {
+  const len = seq.length;
+  if (len < 7) return null;
+  if (len < 14) return 2 * (c.nA + c.nT) + 4 * (c.nG + c.nC);   // Wallace rule (~50 mM salt)
+  const s = seq.toUpperCase();
+  if (len > 200 || !/^[ACGT]+$/.test(s)) return null;            // two-state NN needs short pure duplexes
+  let dH = 0, dS = 0;
+  for (let i = 0; i + 1 < s.length; i++) {
+    const k = s.substr(i, 2);
+    dH += NN_DH[k]; dS += NN_DS[k];
+  }
+  for (const b of [s[0], s[s.length - 1]]) {                     // terminal initiation per end
+    if (b === "G" || b === "C") { dH += 0.1; dS += -2.8; }
+    else { dH += 2.3; dS += 4.1; }
+  }
+  const sym = revcomp(s) === s;
+  if (sym) dS += -1.4;                                           // symmetry correction
+  const R = 1.987, CT = 250e-9;                                  // 250 nM strands
+  dS += 0.368 * (len - 1) * Math.log(NA_M);                      // salt: SantaLucia 1998 eq. 8
+  return (dH * 1000) / (dS + R * Math.log(sym ? CT : CT / 4)) - 273.15;
+}
+function fmtMw(g) {
+  if (g >= 1e6) return (g / 1e6).toFixed(2) + " MDa";
+  if (g >= 1e3) return (g / 1e3).toFixed(1) + " kDa";
+  return Math.round(g) + " Da";
+}
+function renderSelStats() {
+  const box = document.getElementById("selstats");
+  const sel = seqView.sel;
+  if (!sel || !seqView.dna || sel.b - sel.a < 1) { box.hidden = true; return; }
+  const seq = seqView.dna.sequence.slice(sel.a, sel.b);
+  const c = seqComposition(seq);
+  const definite = c.nA + c.nC + c.nG + c.nT;
+  const cells = [["len", seq.length.toLocaleString() + " bp"],
+    ["GC", definite ? ((c.nG + c.nC) / definite * 100).toFixed(1) + "%" : "—"]];
+  const tm = selectionTm(seq, c);
+  if (tm != null) {
+    const how = seq.length >= 14 ? "nearest-neighbour (SantaLucia 1998)" : "Wallace rule (approx.)";
+    cells.push(["Tm", `<span title="${how} — 250 nM strands, 50 mM Na⁺">${tm.toFixed(1)} °C</span>`]);
+  }
+  cells.push(["MW", fmtMw(dnaMolecularWeight(c, seq.length))]);
+  box.innerHTML = cells.map(([lab, v]) =>
+    `<span><span class="lab">${lab}</span><b>${v}</b></span>`).join("");
+  box.hidden = false;
+}
+
+// ---------------- map export (SVG / PNG) ----------------
+// Clone the live <svg>, give it explicit size + the document font so it renders
+// standalone, and paint the current theme's background first.
+function exportSvgText() {
+  const svg = mapGeom.svg;
+  const [W, H] = svg.getAttribute("viewBox").split(/\s+/).slice(2).map(Number);
+  const clone = svg.cloneNode(true);
+  clone.setAttribute("xmlns", SVGNS);
+  clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+  clone.setAttribute("width", W);
+  clone.setAttribute("height", H);
+  clone.setAttribute("font-family", "'Segoe UI', system-ui, sans-serif");
+  const bg = document.createElementNS(SVGNS, "rect");
+  bg.setAttribute("width", "100%"); bg.setAttribute("height", "100%");
+  bg.setAttribute("fill", PAL.bg);
+  clone.insertBefore(bg, clone.firstChild);
+  return { text: new XMLSerializer().serializeToString(clone), W, H };
+}
+function exportName(ext) {
+  return (document.getElementById("name").textContent || "map").trim()
+    .replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "_") + "." + ext;
+}
+function downloadUrl(url, name) {
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.rel = "noopener";
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function exportMap(kind) {
+  if (!mapGeom) return;
+  const { text, W, H } = exportSvgText();
+  if (kind === "svg") {
+    const url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml;charset=utf-8" }));
+    downloadUrl(url, exportName("svg"));
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return;
+  }
+  // rasterize the data URL; target a long edge of ~2400 px (2× minimum)
+  const scale = Math.min(3, Math.max(2, 2400 / Math.max(W, H)));
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement("canvas");
+    cv.width = Math.round(W * scale); cv.height = Math.round(H * scale);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    cv.toBlob((b) => {
+      if (!b) { alert("PNG export failed"); return; }
+      const url = URL.createObjectURL(b);
+      downloadUrl(url, exportName("png"));
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }, "image/png");
+  };
+  img.onerror = () => alert("PNG export failed — try the SVG download instead.");
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(text);
+}
+document.getElementById("exportsvg").addEventListener("click", () => exportMap("svg"));
+document.getElementById("exportpng").addEventListener("click", () => exportMap("png"));
+
 // ---------------- sequence panel ----------------
 
 const RULER_H = 16, LANE_H = 13, SEQ_Y_OFF = 10;
@@ -1481,6 +1622,7 @@ function renderSeq() {
   } else {
     info.textContent = `${dna.length.toLocaleString()} bp — drag to select`;
   }
+  renderSelStats();
 }
 
 function updateSelArc() {
